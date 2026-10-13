@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web UI Design & Development"
+  short_description: "编排 Web UI Skills 的职责、交接与联合验收"
+  default_prompt: "使用 $web-ui-design-development 选择本次参与的 Web UI Skills，明确职责、整体流程、特殊集成事项和联合验收。"

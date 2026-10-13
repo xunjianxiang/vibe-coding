@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "untitled-ui": {
+      "source": "duszlm/web-ui-design-development",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/untitled-ui/SKILL.md",
+      "computedHash": "d48f30981c1e088694b99b59b350575ae60567e6f7225ec1b89e8b48ddba4205"
+    },
+    "web-ui-design-development": {
+      "source": "duszlm/web-ui-design-development",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/web-ui-design-development/SKILL.md",
+      "computedHash": "e3353bbe459d19976dcb26e98058c49710822e3ae969d9fa65919e016fb07a75"
+    }
+  }
+}

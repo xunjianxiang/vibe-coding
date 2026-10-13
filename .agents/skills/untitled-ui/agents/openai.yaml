@@ -1,0 +1,4 @@
+interface:
+  display_name: "Untitled UI"
+  short_description: "负责 Untitled UI 基线、资源推荐、实现与验收"
+  default_prompt: "使用 $untitled-ui 完成项目判断、设计系统契约、页面资源推荐、资源实施和技术验收；页面方案由调用 Agent 决定。"
