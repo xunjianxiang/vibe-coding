@@ -2,11 +2,11 @@ import "dotenv/config";
 import { createServer } from "node:http";
 import { connect } from "node:net";
 import next from "next";
+import { RUNNER_SOCKET_PATH } from "./lib/runner-socket";
 
 const dev = !process.argv.includes("--production");
 const hostname = "0.0.0.0";
 const port = Number(process.env.PORT || 3000);
-const runnerSocket = process.platform === "win32" ? "\\\\.\\pipe\\vibe-coding-runner" : "/run/vibe-coding/runner.sock";
 
 async function main() {
   const server = createServer();
@@ -19,7 +19,7 @@ async function main() {
     const pathname = new URL(request.url || "/", `http://${request.headers.host || hostname}`).pathname;
     if (pathname !== "/ws/terminal" && pathname !== "/ws/events") return;
 
-    const upstream = connect(runnerSocket);
+    const upstream = connect(RUNNER_SOCKET_PATH);
     upstream.once("connect", () => {
       const requestLine = `${request.method || "GET"} ${request.url || "/ws/terminal"} HTTP/${request.httpVersion}\r\n`;
       const headers: string[] = [];

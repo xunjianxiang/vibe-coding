@@ -26,7 +26,7 @@
 *.pem
 
 # local managed projects
-/.projects/
+/.workspace/
 
 # debug
 npm-debug.log*

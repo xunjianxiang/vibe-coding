@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
-import { getProjectsRoot } from "@/runner/config";
+import { WORKSPACE_ROOT } from "@/runner/config";
 import { run, runDevcontainer } from "@/runner/process";
 import { validateContainerConfig } from "@/runner/security";
 
@@ -33,7 +33,7 @@ async function validateProject(projectPath: string): Promise<Validation> {
 }
 
 export async function scanProjects(db: PrismaClient) {
-  const root = getProjectsRoot();
+  const root = WORKSPACE_ROOT;
   await fs.mkdir(root, { recursive: true });
   const rootRealPath = await fs.realpath(root);
   const entries = await fs.readdir(root, { withFileTypes: true });

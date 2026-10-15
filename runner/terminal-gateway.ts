@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import type { Duplex } from "node:stream";
@@ -8,6 +9,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { CodexSessionStatus, PrismaClient } from "@prisma/client";
 import { verifyTerminalTicket, type TerminalAgent, type TerminalKind, type TerminalTicket } from "@/lib/terminal-ticket";
 import { verifyRealtimeTicket } from "@/lib/realtime-ticket";
+import { RUNNER_SOCKET_IS_FILESYSTEM, RUNNER_SOCKET_PATH } from "@/lib/runner-socket";
 import { isWebSocketOriginAllowed } from "@/lib/trusted-origins";
 import {
   CODEX_HOME_CONTAINER_PATH,
@@ -68,10 +70,6 @@ function runtimeKey(workspaceId: string, terminalId: string) {
 
 function runtimePidFile(workspaceId: string, terminalId: string) {
   return `/tmp/vibe-coding-terminal-${createHash("sha256").update(runtimeKey(workspaceId, terminalId)).digest("hex").slice(0, 24)}.pid`;
-}
-
-function socketPath() {
-  return process.platform === "win32" ? "\\\\.\\pipe\\vibe-coding-runner" : "/run/vibe-coding/runner.sock";
 }
 
 function terminalLocation(info: Docker.ContainerInspectInfo, hostPath: string) {
@@ -762,8 +760,11 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
     }
   });
 
-  const target = socketPath();
-  if (process.platform !== "win32" && fs.existsSync(target)) fs.rmSync(target);
+  const target = RUNNER_SOCKET_PATH;
+  if (RUNNER_SOCKET_IS_FILESYSTEM) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    if (fs.existsSync(target)) fs.rmSync(target);
+  }
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(target, () => {

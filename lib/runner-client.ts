@@ -1,9 +1,6 @@
 import "server-only";
 import { request } from "node:http";
-
-const runnerSocket = process.platform === "win32"
-  ? "\\\\.\\pipe\\vibe-coding-runner"
-  : "/run/vibe-coding/runner.sock";
+import { RUNNER_SOCKET_PATH } from "@/lib/runner-socket";
 
 export type RunnerCleanupResult =
   | { ok: true }
@@ -12,7 +9,7 @@ export type RunnerCleanupResult =
 export function cleanupOrphanContainer(containerId: string): Promise<RunnerCleanupResult> {
   return new Promise((resolve) => {
     const clientRequest = request({
-      socketPath: runnerSocket,
+      socketPath: RUNNER_SOCKET_PATH,
       path: `/internal/containers/${encodeURIComponent(containerId)}/cleanup`,
       method: "POST",
       headers: { connection: "close" },

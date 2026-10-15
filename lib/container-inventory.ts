@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { RUNNER_ROOT } from "@/lib/runtime-paths";
 
 export type ContainerInventoryEntry = {
   id: string;
@@ -25,11 +26,7 @@ export type ContainerInventorySnapshot = {
   orphanCount: number;
 };
 
-const inventoryPath = path.join(
-  path.resolve(/* turbopackIgnore: true */ process.env.APP_ROOT || process.cwd()),
-  ".runner",
-  "container-inventory.json",
-);
+const inventoryPath = path.join(RUNNER_ROOT, "container-inventory.json");
 
 export async function readContainerInventory(): Promise<ContainerInventorySnapshot> {
   try {

@@ -1,5 +1,6 @@
 import { access, appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { RUNNER_ROOT } from "@/runner/config";
 
 export type WorkspaceLogChannel = "startup" | "service";
 export type WorkspaceLogStream = "console" | "stdout" | "stderr" | "system";
@@ -34,11 +35,7 @@ export type WorkspaceService = {
 
 export type ServiceLogCursor = { identity: string; lines: number };
 
-export const WORKSPACE_LOG_DIR = path.join(
-  path.resolve(/* turbopackIgnore: true */ process.env.APP_ROOT || process.cwd()),
-  ".runner",
-  "logs",
-);
+export const WORKSPACE_LOG_DIR = path.join(RUNNER_ROOT, "logs");
 
 const WORKSPACE_ID_PATTERN = /^[0-9a-f-]{36}$/i;
 const SERVICE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
