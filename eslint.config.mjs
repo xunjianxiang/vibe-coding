@@ -9,9 +9,17 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".projects/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
+    ".agents/**",
+    "components/application/**",
+    "components/base/**",
+    "components/foundations/**",
+    "components/shared-assets/**",
+    "utils/**",
+    "lib/sso/sso-auth.ts",
   ]),
 ]);
 

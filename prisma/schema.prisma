@@ -1,0 +1,326 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum ProjectStatus {
+  DISCOVERING
+  READY
+  INVALID
+  MISSING
+}
+
+enum LeaseState {
+  CLAIMED
+  DEVELOPING
+}
+
+enum WorkspaceStatus {
+  PENDING
+  CREATING
+  STARTING
+  RUNNING
+  STOPPING
+  STOPPED
+  DELETING
+  DELETED
+  ERROR
+}
+
+enum WorkspaceDesiredState {
+  RUNNING
+  STOPPED
+  DELETED
+}
+
+enum WorkspaceContainerStopReason {
+  REQUESTED
+  NORMAL_EXIT
+  PROCESS_ERROR
+  OOM
+  UNKNOWN
+}
+
+enum DockerEngineStatus {
+  HEALTHY
+  UNREACHABLE
+}
+
+enum PortStatus {
+  PUBLISHED
+  WAITING
+  AVAILABLE
+}
+
+enum ResourceType {
+  CONTAINER
+  VOLUME
+  NETWORK
+}
+
+enum ResourceRetention {
+  TEMPORARY
+  PERSISTENT
+}
+
+enum CodexSessionStatus {
+  STARTING
+  RUNNING
+  INTERRUPTED
+  EXITED
+  ERROR
+}
+
+enum TerminalKind {
+  SHELL
+  AGENT
+}
+
+enum TerminalAgent {
+  CODEX
+}
+
+enum TerminalDesiredState {
+  OPEN
+  CLOSED
+}
+
+enum TerminalRuntimeStatus {
+  STARTING
+  RUNNING
+  STOPPING
+  INTERRUPTED
+  EXITED
+  ERROR
+}
+
+enum ServiceOperationAction {
+  RESTART
+}
+
+enum ServiceOperationStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model Session {
+  id        String   @id @db.Char(64)
+  sub       String   @db.VarChar(255)
+  tokenEnc  String   @map("token_enc") @db.LongText
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([sub])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Project {
+  id               String        @id @default(uuid()) @db.VarChar(36)
+  key              String        @unique @db.VarChar(255)
+  path             String        @db.Text
+  status           ProjectStatus @default(DISCOVERING)
+  error            String?       @db.Text
+  devcontainerHash String?       @map("devcontainer_hash") @db.Char(64)
+  seenAt           DateTime      @map("seen_at")
+  checkedAt        DateTime      @map("checked_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  lease            Lease?
+  workspaces       Workspace[]
+
+  @@index([status])
+  @@map("projects")
+}
+
+model Lease {
+  projectId   String     @id @map("project_id") @db.VarChar(36)
+  workspaceId String?    @unique @map("workspace_id") @db.VarChar(36)
+  sub         String     @db.VarChar(255)
+  state       LeaseState
+  tokenHash   String     @map("token_hash") @db.Char(64)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([sub])
+  @@map("leases")
+}
+
+model Workspace {
+  id                   String                        @id @default(uuid()) @db.VarChar(36)
+  projectId            String                        @map("project_id") @db.VarChar(36)
+  sub                  String                        @db.VarChar(255)
+  requestId            String                        @map("request_id") @db.VarChar(255)
+  path                 String                        @db.Text
+  status               WorkspaceStatus               @default(PENDING)
+  containerId          String?                       @map("container_id") @db.VarChar(255)
+  containerState       String?                       @map("container_state") @db.VarChar(32)
+  containerObservedAt  DateTime?                     @map("container_observed_at")
+  containerStartedAt   DateTime?                     @map("container_started_at")
+  containerStoppedAt   DateTime?                     @map("container_stopped_at")
+  containerExitCode    Int?                          @map("container_exit_code")
+  containerStopReason  WorkspaceContainerStopReason? @map("container_stop_reason")
+  containerOomDetected Boolean                       @default(false) @map("container_oom_detected")
+  desiredState         WorkspaceDesiredState         @default(RUNNING) @map("desired_state")
+  version              Int                           @default(1)
+  error                String?                       @db.Text
+  devcontainerHash     String?                       @map("devcontainer_hash") @db.Char(64)
+  activeAt             DateTime?                     @map("active_at")
+  expiresAt            DateTime?                     @map("expires_at")
+  activeTerminalId     String?                       @map("active_terminal_id") @db.VarChar(36)
+  createdAt            DateTime                      @default(now()) @map("created_at")
+  updatedAt            DateTime                      @updatedAt @map("updated_at")
+  project              Project                       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  ports                Port[]
+  resources            Resource[]
+  codexSessions        CodexSession[]
+  terminals            Terminal[]
+  terminalRuntimes     TerminalRuntime[]
+  serviceOperations    ServiceOperation[]
+
+  @@unique([projectId, sub, requestId])
+  @@index([status, desiredState])
+  @@index([sub])
+  @@index([activeTerminalId])
+  @@map("workspaces")
+}
+
+model Terminal {
+  id            String               @id @default(uuid()) @db.VarChar(36)
+  workspaceId   String               @map("workspace_id") @db.VarChar(36)
+  sub           String               @db.VarChar(255)
+  kind          TerminalKind
+  agent         TerminalAgent?
+  title         String               @db.VarChar(128)
+  sequence      Int
+  desiredState  TerminalDesiredState @default(OPEN) @map("desired_state")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  closedAt      DateTime?            @map("closed_at")
+  workspace     Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runtimes      TerminalRuntime[]
+  codexSessions CodexSession[]
+
+  @@unique([workspaceId, sequence])
+  @@index([workspaceId, desiredState])
+  @@index([sub])
+  @@map("terminals")
+}
+
+model TerminalRuntime {
+  id             String                @id @default(uuid()) @db.VarChar(36)
+  terminalId     String                @map("terminal_id") @db.VarChar(36)
+  workspaceId    String                @map("workspace_id") @db.VarChar(36)
+  containerId    String                @map("container_id") @db.VarChar(255)
+  execId          String?               @map("exec_id") @db.VarChar(255)
+  activeKey       String?               @unique @map("active_key") @db.VarChar(36)
+  status          TerminalRuntimeStatus @default(STARTING)
+  lastActivityAt DateTime              @map("last_activity_at")
+  idleExpiresAt  DateTime              @map("idle_expires_at")
+  exitCode        Int?                  @map("exit_code")
+  error           String?               @db.Text
+  startedAt       DateTime              @default(now()) @map("started_at")
+  endedAt         DateTime?             @map("ended_at")
+  terminal        Terminal              @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+  workspace       Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  codexSession    CodexSession?
+
+  @@index([workspaceId, status, idleExpiresAt])
+  @@index([terminalId, startedAt])
+  @@map("terminal_runtimes")
+}
+
+model RunnerHealth {
+  id                   String             @id @db.VarChar(64)
+  dockerStatus         DockerEngineStatus @default(UNREACHABLE) @map("docker_status")
+  eventStreamConnected Boolean            @default(false) @map("event_stream_connected")
+  checkedAt            DateTime           @map("checked_at")
+  error                String?            @db.Text
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  @@map("runner_health")
+}
+
+model ServiceOperation {
+  id             String                 @id @default(uuid()) @db.VarChar(36)
+  workspaceId    String                 @map("workspace_id") @db.VarChar(36)
+  serviceId      String                 @map("service_id") @db.VarChar(64)
+  action         ServiceOperationAction
+  status         ServiceOperationStatus @default(PENDING)
+  requestedBy    String                 @map("requested_by") @db.VarChar(255)
+  idempotencyKey String                 @map("idempotency_key") @db.VarChar(255)
+  activeKey      String?                @map("active_key") @db.VarChar(64)
+  error          String?                @db.Text
+  createdAt      DateTime               @default(now()) @map("created_at")
+  startedAt      DateTime?              @map("started_at")
+  finishedAt     DateTime?              @map("finished_at")
+  workspace      Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, idempotencyKey])
+  @@unique([workspaceId, activeKey])
+  @@index([status, createdAt])
+  @@map("service_operations")
+}
+
+model Port {
+  id            String     @id @default(uuid()) @db.VarChar(36)
+  workspaceId   String     @map("workspace_id") @db.VarChar(36)
+  containerId   String     @map("container_id") @db.VarChar(255)
+  containerPort Int        @map("container_port")
+  hostIp        String     @map("host_ip") @db.VarChar(64)
+  hostPort      Int        @map("host_port")
+  proto         String     @db.VarChar(16)
+  url           String?    @db.Text
+  status        PortStatus @default(PUBLISHED)
+  checkedAt     DateTime   @map("checked_at")
+  workspace     Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, containerId, containerPort, hostPort])
+  @@map("ports")
+}
+
+model Resource {
+  id             String            @id @default(uuid()) @db.VarChar(36)
+  workspaceId    String            @map("workspace_id") @db.VarChar(36)
+  type           ResourceType
+  dockerId       String            @map("docker_id") @db.VarChar(255)
+  name           String?           @db.VarChar(255)
+  composeProject String?           @map("compose_project") @db.VarChar(255)
+  labels         Json?
+  retention      ResourceRetention @default(TEMPORARY)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  workspace      Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, type, dockerId])
+  @@index([composeProject])
+  @@map("resources")
+}
+
+model CodexSession {
+  id              String             @id @default(uuid()) @db.VarChar(36)
+  workspaceId     String             @map("workspace_id") @db.VarChar(36)
+  terminalId      String?            @map("terminal_id") @db.VarChar(36)
+  runtimeId       String?            @unique @map("runtime_id") @db.VarChar(36)
+  nativeSessionId String?            @map("native_session_id") @db.VarChar(255)
+  sub             String             @db.VarChar(255)
+  execId          String?            @map("exec_id") @db.VarChar(255)
+  status          CodexSessionStatus @default(STARTING)
+  exitCode        Int?               @map("exit_code")
+  error           String?            @db.Text
+  startedAt       DateTime           @default(now()) @map("started_at")
+  connectedAt     DateTime?          @map("connected_at")
+  endedAt         DateTime?          @map("ended_at")
+  workspace       Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  terminal        Terminal?          @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+  runtime         TerminalRuntime?   @relation(fields: [runtimeId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([terminalId, startedAt])
+  @@index([terminalId, nativeSessionId])
+  @@index([sub])
+  @@map("codex_sessions")
+}
