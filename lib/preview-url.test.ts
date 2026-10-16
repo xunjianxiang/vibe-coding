@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildPreviewUrl } from "./preview-url";
+import { buildPreviewUrl, findPublishedServicePort } from "./preview-url";
 
 test("uses the current page hostname with the published service port", () => {
   assert.equal(
@@ -25,4 +25,12 @@ test("supports an IPv6 page hostname", () => {
 
 test("keeps the service URL when it cannot be parsed", () => {
   assert.equal(buildPreviewUrl("not a url", "192.168.1.25"), "not a url");
+});
+
+test("finds a published service by container or host port", () => {
+  const ports = [{ containerPort: 5173, hostPort: 12001, url: "http://127.0.0.1:12001/" }];
+
+  assert.equal(findPublishedServicePort(ports, 5173), ports[0]);
+  assert.equal(findPublishedServicePort(ports, 12001), ports[0]);
+  assert.equal(findPublishedServicePort(ports, 3000), null);
 });

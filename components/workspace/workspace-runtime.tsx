@@ -10,7 +10,7 @@ import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { useRealtime } from "@/components/realtime/realtime-provider";
 import { createIdempotencyKey } from "@/lib/idempotency-key";
 import { normalizeStartupLogMessage, stripAnsi } from "@/lib/log-output";
-import { buildPreviewUrl } from "@/lib/preview-url";
+import { buildPreviewUrl, findPublishedServicePort } from "@/lib/preview-url";
 import { toUserFacingText } from "@/lib/ui-copy";
 import { WORKSPACE_ACTIVITY_INTERVAL_MS, WORKSPACE_RESUME_DRIFT_MS } from "@/lib/workspace-policy";
 
@@ -513,43 +513,38 @@ export function WorkspaceRuntime({
               const operationInProgress = service.operation?.status === "PENDING" || service.operation?.status === "RUNNING";
               const isRestarting = operationInProgress || submittingServiceId === service.id;
               const operationColor = service.operation?.status === "FAILED" ? "error" : operationInProgress ? "blue" : service.operation?.status === "SUCCEEDED" ? "success" : "gray";
-              const publishedPort = service.port === null
-                ? null
-                : runtime.ports.find((port) => port.containerPort === service.port);
-              const serviceAddress = service.port === null
-                ? null
-                : `${previewHostname}:${publishedPort?.hostPort ?? service.port}`;
-              const browserPort = service.browser && publishedPort?.status === "AVAILABLE" && publishedPort.url
-                ? publishedPort
+              const publishedPort = findPublishedServicePort(runtime.ports, service.port);
+              const previewUrl = service.browser && publishedPort?.status === "AVAILABLE" && publishedPort.url
+                ? buildPreviewUrl(publishedPort.url, previewHostname)
                 : null;
               return (
                 <section key={service.id} className="flex min-h-64 flex-1 flex-col bg-primary">
                   <div className="flex h-12 shrink-0 items-center gap-2 px-3">
                     <div className="flex min-w-0 flex-1 items-center gap-2">
                       <h3 className="truncate text-sm font-semibold text-primary">{service.name}</h3>
-                      {serviceAddress && (browserPort ? (
-                        <Tooltip title={`在浏览器中打开 ${service.name}`}>
-                          <a
-                            href={buildPreviewUrl(browserPort.url!, previewHostname)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group inline-flex max-w-56 shrink-0 items-center rounded-sm text-xs leading-none font-medium tabular-nums text-tertiary outline-hidden transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                            aria-label={`在浏览器中打开 ${service.name}：${serviceAddress}`}
-                          >
-                            <span className="inline-flex min-w-0 items-center gap-1">
-                              <span className="truncate underline-offset-2 group-hover:underline">{serviceAddress}</span>
-                              <LinkExternal01 aria-hidden="true" className="size-3.5 shrink-0 text-fg-quaternary transition-colors group-hover:text-fg-secondary" />
-                            </span>
-                          </a>
-                        </Tooltip>
-                      ) : (
-                        <span className="max-w-56 shrink-0 truncate text-xs font-medium tabular-nums text-quaternary">
-                          {serviceAddress}
-                        </span>
-                      ))}
                       {service.operation && <BadgeWithDot color={operationColor}>{service.operation.status}</BadgeWithDot>}
                     </div>
-                    {service.restartable && <Button size="xs" color="tertiary" iconLeading={RefreshCcw01} isLoading={isRestarting} isDisabled={!runtime.access.writable} showTextWhileLoading onPress={() => void restartService(service)}>{isRestarting ? "正在重启" : "重启"}</Button>}
+                    <div className="flex shrink-0 items-center gap-1">
+                      {service.browser && (previewUrl ? (
+                        <Button
+                          size="xs"
+                          color="tertiary"
+                          iconLeading={LinkExternal01}
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          预览
+                        </Button>
+                      ) : (
+                        <Tooltip title="预览地址尚未就绪">
+                          <Button size="xs" color="tertiary" iconLeading={LinkExternal01} isDisabled>
+                            预览
+                          </Button>
+                        </Tooltip>
+                      ))}
+                      {service.restartable && <Button size="xs" color="tertiary" iconLeading={RefreshCcw01} isLoading={isRestarting} isDisabled={!runtime.access.writable} showTextWhileLoading onPress={() => void restartService(service)}>{isRestarting ? "正在重启" : "重启"}</Button>}
+                    </div>
                   </div>
                   <div className="flex min-h-0 flex-1 flex-col">
                     {restartError?.serviceId === service.id && <p role="alert" className="border-b border-secondary px-3 py-2 text-xs text-error-primary">重启失败：{toUserFacingText(restartError.message)}</p>}
