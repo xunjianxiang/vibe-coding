@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getAgentLaunchSpec, getAgentSessionDiscoveryCommand, parseAgentSessionId } from "@/runner/agent-runtime";
 
-const CODEX_HOME = "/home/node/.codex";
+const CODEX_HOME = "/root/.codex";
 const CODEX_SQLITE_HOME = "/root/.codex-sqlite";
 const SESSION_ID = "01a13940-1244-7452-9a4b-4028e918936f";
 

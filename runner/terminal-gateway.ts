@@ -12,13 +12,13 @@ import { verifyRealtimeTicket } from "@/lib/realtime-ticket";
 import { RUNNER_SOCKET_IS_FILESYSTEM, RUNNER_SOCKET_PATH } from "@/lib/runner-socket";
 import { isWebSocketOriginAllowed } from "@/lib/trusted-origins";
 import {
-  CODEX_HOME_CONTAINER_PATH,
-  CODEX_SQLITE_HOME_CONTAINER_PATH,
+  codexStoragePaths,
   shouldReclaimTerminalRuntime,
   terminalRuntimeIdleDeadline,
   workspaceErrorCode,
 } from "@/lib/workspace-policy";
 import { getAgentLaunchSpec, getAgentSessionDiscoveryCommand, parseAgentSessionId } from "@/runner/agent-runtime";
+import { resolveContainerUserHome } from "@/runner/container-user-home";
 import { removeOrphanContainer } from "@/runner/container-cleanup";
 import { addRealtimeClient } from "@/runner/realtime-hub";
 import { isServiceId, type WorkspaceLogChannel } from "@/runner/logs";
@@ -464,17 +464,21 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
       throw new Error("Workspace container ownership could not be verified.");
     }
     const { remoteUser, workspaceFolder } = terminalLocation(info, workspace.path);
+    const storagePaths = agent
+      ? codexStoragePaths(await resolveContainerUserHome(container, remoteUser))
+      : null;
     const mountedDestinations = new Set(info.Mounts.map((mount) => mount.Destination));
-    const sharedCodexStorage = mountedDestinations.has(CODEX_HOME_CONTAINER_PATH)
-      && mountedDestinations.has(CODEX_SQLITE_HOME_CONTAINER_PATH);
+    const sharedCodexStorage = storagePaths
+      && mountedDestinations.has(storagePaths.codexHome)
+      && mountedDestinations.has(storagePaths.codexSqliteHome);
     if (kind === "agent" && !sharedCodexStorage) throw new Error("Shared Agent session storage is not mounted.");
-    const agentHome = agent && sharedCodexStorage ? CODEX_HOME_CONTAINER_PATH : null;
+    const agentHome = agent && sharedCodexStorage ? storagePaths.codexHome : null;
     const pidFile = runtimePidFile(ticket.workspaceId, ticket.terminalId);
     const agentSessionMarker = agent && agentHome
       ? `${agentHome}/.session-start-${terminal.id}-${Date.now()}-${process.pid}`
       : null;
-    const agentLaunch = agent && agentHome
-      ? getAgentLaunchSpec(agent, agentHome, CODEX_SQLITE_HOME_CONTAINER_PATH, nativeSessionId)
+    const agentLaunch = agent && agentHome && storagePaths
+      ? getAgentLaunchSpec(agent, agentHome, storagePaths.codexSqliteHome, nativeSessionId)
       : null;
     const command = kind === "shell"
       ? "exec \"${SHELL:-/bin/sh}\""

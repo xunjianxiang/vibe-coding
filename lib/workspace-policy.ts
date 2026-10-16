@@ -3,8 +3,17 @@ export const ORPHAN_CONTAINER_GRACE_MS = 60_000;
 export const WORKSPACE_ACTIVITY_INTERVAL_MS = 30_000;
 export const WORKSPACE_RESUME_DRIFT_MS = 90_000;
 export const WORKSPACE_IDLE_TIMEOUT_MS = 10 * 60_000;
-export const CODEX_HOME_CONTAINER_PATH = "/home/node/.codex";
-export const CODEX_SQLITE_HOME_CONTAINER_PATH = "/root/.codex-sqlite";
+
+export function codexStoragePaths(userHome: string) {
+  const home = userHome.replace(/\/+$/, "");
+  if (!home.startsWith("/") || home === "") {
+    throw new Error("Dev Container user home must be an absolute path.");
+  }
+  return {
+    codexHome: `${home}/.codex`,
+    codexSqliteHome: `${home}/.codex-sqlite`,
+  };
+}
 
 export function workspaceIdleDeadline(now = Date.now()) {
   return new Date(now + WORKSPACE_IDLE_TIMEOUT_MS);

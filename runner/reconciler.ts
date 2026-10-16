@@ -5,14 +5,14 @@ import { writeContainerInventory, type ContainerInventoryEntry } from "@/lib/con
 import { normalizeStartupLogMessage } from "@/lib/log-output";
 import {
   ACTIVE_WORKSPACE_STATUSES,
-  CODEX_HOME_CONTAINER_PATH,
-  CODEX_SQLITE_HOME_CONTAINER_PATH,
   ORPHAN_CONTAINER_GRACE_MS,
+  codexStoragePaths,
   hasWorkspaceError,
   workspaceErrorCode,
   workspaceIdleDeadline,
 } from "@/lib/workspace-policy";
 import { hashDevcontainerDirectory } from "@/runner/devcontainer-hash";
+import { resolveContainerUserHome } from "@/runner/container-user-home";
 import { appendWorkspaceLog, hasWorkspaceServiceCatalog, readWorkspaceServices } from "@/runner/logs";
 import { run, runDevcontainerStreaming, type ProcessOutputLine } from "@/runner/process";
 import { validateContainerConfig } from "@/runner/security";
@@ -401,13 +401,15 @@ async function syncWorkspaceResources(
 
 async function validateSharedCodexStorage(containerId: string, remoteUser: string) {
   const container = docker.getContainer(containerId);
+  const userHome = await resolveContainerUserHome(container, remoteUser);
+  const { codexHome, codexSqliteHome } = codexStoragePaths(userHome);
   const inspected = await container.inspect();
   const destinations = new Set(inspected.Mounts.map((mount) => mount.Destination));
-  if (!destinations.has(CODEX_HOME_CONTAINER_PATH)) {
-    throw new Error(`Shared Codex home is not mounted at ${CODEX_HOME_CONTAINER_PATH}.`);
+  if (!destinations.has(codexHome)) {
+    throw new Error(`Shared Codex home is not mounted at ${codexHome}.`);
   }
-  if (!destinations.has(CODEX_SQLITE_HOME_CONTAINER_PATH)) {
-    throw new Error(`Shared Codex SQLite home is not mounted at ${CODEX_SQLITE_HOME_CONTAINER_PATH}.`);
+  if (!destinations.has(codexSqliteHome)) {
+    throw new Error(`Shared Codex SQLite home is not mounted at ${codexSqliteHome}.`);
   }
   const setup = await container.exec({
     AttachStdout: true,
@@ -415,8 +417,8 @@ async function validateSharedCodexStorage(containerId: string, remoteUser: strin
     Tty: false,
     User: remoteUser,
     Env: [
-      `CODEX_HOME_TARGET=${CODEX_HOME_CONTAINER_PATH}`,
-      `CODEX_SQLITE_HOME_TARGET=${CODEX_SQLITE_HOME_CONTAINER_PATH}`,
+      `CODEX_HOME_TARGET=${codexHome}`,
+      `CODEX_SQLITE_HOME_TARGET=${codexSqliteHome}`,
     ],
     Cmd: [
       "sh",
