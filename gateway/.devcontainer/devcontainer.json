@@ -1,0 +1,14 @@
+{
+  "name": "Vibe Coding Preview Gateway",
+  "image": "node:24-bookworm-slim",
+  "runArgs": [
+    "--network=${localEnv:GATEWAY_NETWORK}",
+    "--network-alias=${localEnv:GATEWAY_NETWORK}-gateway",
+    "--publish=0.0.0.0:${localEnv:GATEWAY_PORT}:8080"
+  ],
+  "postCreateCommand": "npm ci --omit=dev",
+  "postStartCommand": "npm run start",
+  "overrideCommand": true,
+  "remoteUser": "node",
+  "shutdownAction": "stopContainer"
+}

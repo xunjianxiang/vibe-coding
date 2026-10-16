@@ -1,0 +1,12 @@
+{
+  "name": "vibe-coding-preview-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "http-proxy": "1.18.1"
+  }
+}
