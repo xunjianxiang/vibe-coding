@@ -11,6 +11,7 @@ import { createServerSso } from "@/lib/auth/sso";
 import { getDb } from "@/lib/db";
 import { readContainerInventory } from "@/lib/container-inventory";
 import { getRequestOrigin } from "@/lib/http/origin";
+import { buildGatewayPreviewUrl } from "@/lib/preview-url";
 import { toUserIdentity } from "@/lib/user-identity";
 import { readWorkspaceGitStatus } from "@/runner/git-status";
 import { readWorkspaceServices } from "@/runner/logs";
@@ -119,6 +120,7 @@ async function WorkspaceContent({ params }: { params: Promise<{ workspaceId: str
               name,
               port: port ?? null,
               browser: browser === true,
+              gatewayUrl: browser === true && port ? buildGatewayPreviewUrl(workspace.id, port) : null,
               restartable: !!command,
               operation: workspace.serviceOperations.find((operation) => operation.serviceId === id) ?? null,
             })),

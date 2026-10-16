@@ -1,6 +1,7 @@
 import { readSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { readContainerInventory } from "@/lib/container-inventory";
+import { buildGatewayPreviewUrl } from "@/lib/preview-url";
 import { readWorkspaceGitStatus } from "@/runner/git-status";
 import { readWorkspaceServices } from "@/runner/logs";
 
@@ -97,6 +98,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ wor
       name,
       port: port ?? null,
       browser: browser === true,
+      gatewayUrl: browser === true && port ? buildGatewayPreviewUrl(workspaceId, port) : null,
       restartable: !!command,
       operation: workspace.serviceOperations.find((operation) => operation.serviceId === id) ?? null,
     })),

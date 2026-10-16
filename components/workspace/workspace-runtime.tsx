@@ -26,6 +26,7 @@ type WorkspaceService = {
   name: string;
   port: number | null;
   browser: boolean;
+  gatewayUrl: string | null;
   restartable: boolean;
   operation: ServiceOperation | null;
 };
@@ -514,8 +515,10 @@ export function WorkspaceRuntime({
               const isRestarting = operationInProgress || submittingServiceId === service.id;
               const operationColor = service.operation?.status === "FAILED" ? "error" : operationInProgress ? "blue" : service.operation?.status === "SUCCEEDED" ? "success" : "gray";
               const publishedPort = findPublishedServicePort(runtime.ports, service.port);
-              const previewUrl = service.browser && publishedPort?.status === "AVAILABLE" && publishedPort.url
-                ? buildPreviewUrl(publishedPort.url, previewHostname)
+              const previewUrl = service.browser && runtime.container?.running
+                ? service.gatewayUrl ?? (publishedPort?.status === "AVAILABLE" && publishedPort.url
+                  ? buildPreviewUrl(publishedPort.url, previewHostname)
+                  : null)
                 : null;
               return (
                 <section key={service.id} className="flex min-h-64 flex-1 flex-col bg-primary">

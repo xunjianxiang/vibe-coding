@@ -3,6 +3,7 @@ import Docker from "dockerode";
 import { finished } from "node:stream/promises";
 import { writeContainerInventory, type ContainerInventoryEntry } from "@/lib/container-inventory";
 import { normalizeStartupLogMessage } from "@/lib/log-output";
+import { isGatewayEnabled } from "@/lib/preview-routing";
 import {
   ACTIVE_WORKSPACE_STATUSES,
   ORPHAN_CONTAINER_GRACE_MS,
@@ -18,6 +19,7 @@ import { run, runDevcontainerStreaming, type ProcessOutputLine } from "@/runner/
 import { validateContainerConfig } from "@/runner/security";
 import { loadProcessServices, registerProcessServices, syncProcessServiceLogs } from "@/runner/services";
 import { reconcileServiceOperations } from "@/runner/service-operations";
+import { connectManagedContainerToPreviewNetwork, disconnectManagedContainerFromPreviewNetwork, ensurePreviewNetwork } from "@/runner/preview-network";
 import { closeWorkspaceTerminals, hasActiveWorkspaceTerminalRuntime } from "@/runner/terminal-gateway";
 import { publishToUser } from "@/runner/realtime-hub";
 import { applyUnexpectedContainerStopped } from "@/runner/workspace-state";
@@ -117,6 +119,15 @@ async function reconcileContainerInventory(db: PrismaClient) {
       error: stoppedDetails?.State.Error || null,
       anomaly,
     });
+    const shouldAttachToPreview = isRunningContainer(container) && workspaceId && anomaly === null
+      && workspace?.desiredState === "RUNNING" && !["STOPPED", "DELETED"].includes(workspace.status);
+    if (shouldAttachToPreview) {
+      await connectManagedContainerToPreviewNetwork(container.Id, workspaceId).catch((error) => {
+        console.error(`Unable to connect managed container ${container.Id} to the preview network:`, error);
+      });
+    } else if (isRunningContainer(container)) {
+      await disconnectManagedContainerFromPreviewNetwork(container.Id).catch(() => undefined);
+    }
     if (workspace && anomaly === "OWNERSHIP_CONFLICT") {
       await db.workspace.updateMany({
         where: { id: workspace.id, status: { in: [...ACTIVE_WORKSPACE_STATUSES] } },
@@ -179,6 +190,7 @@ async function reconcileContainerInventory(db: PrismaClient) {
 async function stopWorkspace(db: PrismaClient, workspace: Workspace) {
   await db.workspace.updateMany({ where: { id: workspace.id, status: { not: "STOPPED" } }, data: { status: "STOPPING" } });
   await closeWorkspaceTerminals(workspace.id, "Workspace is stopping.");
+  if (workspace.containerId) await disconnectManagedContainerFromPreviewNetwork(workspace.containerId).catch(() => undefined);
   const resources = await db.resource.findMany({ where: { workspaceId: workspace.id, type: "CONTAINER" } });
   if (workspace.containerId) await stopOwnedContainer(workspace.containerId, workspace.id);
   for (const resource of resources) {
@@ -224,6 +236,7 @@ async function stopWorkspace(db: PrismaClient, workspace: Workspace) {
 
 async function deleteWorkspaceResources(db: PrismaClient, workspace: Workspace) {
   await closeWorkspaceTerminals(workspace.id, "Workspace is being deleted.");
+  if (workspace.containerId) await disconnectManagedContainerFromPreviewNetwork(workspace.containerId).catch(() => undefined);
   const resources = await db.resource.findMany({ where: { workspaceId: workspace.id } });
   const removalOrder = { CONTAINER: 0, NETWORK: 1, VOLUME: 2 } as const;
   for (const resource of [...resources].sort((left, right) => removalOrder[left.type] - removalOrder[right.type])) {
@@ -620,6 +633,7 @@ async function startWorkspace(db: PrismaClient, workspace: Workspace) {
       }),
     ]);
     await syncPorts(db, workspace.id, result.containerId, inspected);
+    await connectManagedContainerToPreviewNetwork(result.containerId, workspace.id);
     await appendStartupSystem(workspace.id, "Workspace is ready; opening the development view.");
     publishToUser(workspace.sub, "workspace.status.changed", {
       status: "RUNNING",
@@ -680,6 +694,7 @@ export async function syncRunningWorkspaceServiceLogs(db: PrismaClient) {
 }
 
 export async function reconcileOnce(db: PrismaClient) {
+  if (isGatewayEnabled()) await ensurePreviewNetwork();
   await reconcileDesiredStates(db);
   await recoverStuckWorkspaces(db);
   await reconcileContainerInventory(db);

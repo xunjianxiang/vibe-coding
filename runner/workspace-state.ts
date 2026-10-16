@@ -2,6 +2,7 @@ import type { PrismaClient, WorkspaceContainerStopReason } from "@prisma/client"
 import { appendWorkspaceLog } from "@/runner/logs";
 import { publishToUser } from "@/runner/realtime-hub";
 import { closeWorkspaceTerminals } from "@/runner/terminal-gateway";
+import { disconnectManagedContainerFromPreviewNetwork } from "@/runner/preview-network";
 
 export type ContainerStoppedInput = {
   workspaceId: string;
@@ -55,6 +56,7 @@ export async function applyUnexpectedContainerStopped(db: PrismaClient, input: C
   });
 
   if (!changed) return false;
+  if (!input.containerMissing) await disconnectManagedContainerFromPreviewNetwork(input.containerId).catch(() => undefined);
   await closeWorkspaceTerminals(input.workspaceId, "Workspace container stopped.");
   await db.terminalRuntime.updateMany({
     where: { workspaceId: input.workspaceId, status: { in: ["STARTING", "RUNNING", "STOPPING"] } },
