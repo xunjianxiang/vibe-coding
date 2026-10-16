@@ -4,5 +4,7 @@ import { resolveRequestOrigin } from "@/lib/http/request-origin";
 
 export async function getRequestOrigin() {
   const requestHeaders = await headers();
-  return resolveRequestOrigin(requestHeaders, process.env.NODE_ENV === "production" ? "https" : "http");
+  // The built-in server listens over HTTP in every mode. An HTTPS reverse proxy
+  // must identify the browser-facing protocol with X-Forwarded-Proto.
+  return resolveRequestOrigin(requestHeaders, "http");
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { getDb } from "@/lib/db";
+import { getRequestOrigin } from "@/lib/http/origin";
 import {
   createSessionId,
   decryptToken,
@@ -33,12 +34,13 @@ export async function readSession() {
 
 export async function writeSession(token: string, sub: string, expiresAt: Date) {
   const id = createSessionId();
+  const secure = new URL(await getRequestOrigin()).protocol === "https:";
   await getDb().session.create({
     data: { id: hashSessionId(id), sub, tokenEnc: encryptToken(token), expiresAt },
   });
   (await cookies()).set(COOKIE_NAME, id, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax",
     path: "/",
     expires: expiresAt,
