@@ -13,7 +13,7 @@ import { readContainerInventory } from "@/lib/container-inventory";
 import { getRequestOrigin } from "@/lib/http/origin";
 import { toUserIdentity } from "@/lib/user-identity";
 import { readWorkspaceGitStatus } from "@/runner/git-status";
-import { readWorkspaceLogSnapshot, readWorkspaceServices } from "@/runner/logs";
+import { readWorkspaceServices } from "@/runner/logs";
 
 async function WorkspaceContent({ params }: { params: Promise<{ workspaceId: string }> }) {
   const { workspaceId } = await params;
@@ -35,8 +35,7 @@ async function WorkspaceContent({ params }: { params: Promise<{ workspaceId: str
   });
   if (!workspace) notFound();
   const codex = workspace.codexSessions[0];
-  const [startupLogSnapshot, services, inventory, profile, git, runnerHealth] = await Promise.all([
-    readWorkspaceLogSnapshot(workspace.id, "startup"),
+  const [services, inventory, profile, git, runnerHealth] = await Promise.all([
     readWorkspaceServices(workspace.id),
     readContainerInventory(),
     createServerSso(requestOrigin).users.getCurrent().catch(() => null),
@@ -124,8 +123,6 @@ async function WorkspaceContent({ params }: { params: Promise<{ workspaceId: str
               operation: workspace.serviceOperations.find((operation) => operation.serviceId === id) ?? null,
             })),
           }}
-          initialStartupLogs={startupLogSnapshot.entries}
-          initialStartupLogOffset={startupLogSnapshot.offset}
         />
       </main>
     </div>

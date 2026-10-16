@@ -4,7 +4,7 @@ import path from "node:path";
 process.env.APP_ROOT ??= path.resolve(__dirname, "..");
 
 async function main() {
-  const [{ createRunnerDb }, { scanProjects }, { reconcileOnce }, { startTerminalGateway }, { startDockerMonitor }] = await Promise.all([
+  const [{ createRunnerDb }, { scanProjects }, { reconcileOnce, syncRunningWorkspaceServiceLogs }, { startTerminalGateway }, { startDockerMonitor }] = await Promise.all([
     import("@/runner/db"),
     import("@/runner/scanner"),
     import("@/runner/reconciler"),
@@ -36,20 +36,21 @@ async function main() {
     await startTerminalGateway(db, reconcileSerialized);
     console.log("Workspace Runner started.");
 
-    const runLoop = async (name: string, task: () => Promise<void>) => {
+    const runLoop = async (name: string, task: () => Promise<void>, intervalMs = 5_000) => {
       while (true) {
         try {
           await task();
         } catch (error) {
           console.error(`${name} failed; retrying:`, error instanceof Error ? error.message : error);
         }
-        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
       }
     };
 
     await Promise.all([
       runLoop("Project scan", () => scanProjects(db)),
       runLoop("Workspace reconciliation", reconcileSerialized),
+      runLoop("Service log sync", () => syncRunningWorkspaceServiceLogs(db), 1_000),
       startDockerMonitor(db, reconcileSerialized),
     ]);
   } finally {

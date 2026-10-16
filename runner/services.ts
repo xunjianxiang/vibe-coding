@@ -24,7 +24,20 @@ type ServiceManifest = {
 };
 
 export const SERVICE_LOG_MANIFEST_PATH = path.join(".devcontainer", "metadata.json");
+const SERVICE_LOG_LINE_BYTES = 16 * 1024;
 const cursorCache = new Map<string, Record<string, ServiceLogCursor>>();
+const syncQueues = new Map<string, Promise<void>>();
+
+async function serializeLogSync(workspaceId: string, task: () => Promise<void>) {
+  const previous = syncQueues.get(workspaceId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  syncQueues.set(workspaceId, next);
+  try {
+    await next;
+  } finally {
+    if (syncQueues.get(workspaceId) === next) syncQueues.delete(workspaceId);
+  }
+}
 
 function parseLogPath(value: unknown, serviceId: string) {
   if (typeof value !== "string" || !path.posix.isAbsolute(value) || value.length > 4_096 || /[\0\r\n]/.test(value)) {
@@ -115,8 +128,8 @@ async function readLogLines(containerId: string, filePath: string, cursor: Servi
     "identity=$(stat -c '%d:%i' \"$file\")",
     "count=$(wc -l < \"$file\")",
     "printf '%s\\n%s\\n' \"$identity\" \"$count\"",
-    "if { [ -n \"$previous_identity\" ] && [ \"$identity\" != \"$previous_identity\" ]; } || [ \"$count\" -lt \"$previous\" ]; then start=$((count > 200 ? count - 199 : 1)); fi",
-    "if [ \"$count\" -ge \"$start\" ]; then sed -n \"${start},${count}p\" \"$file\"; fi",
+    "if [ -z \"$previous_identity\" ] || [ \"$identity\" != \"$previous_identity\" ] || [ \"$count\" -lt \"$previous\" ]; then start=$((count > 200 ? count - 199 : 1)); fi",
+    `if [ "$count" -ge "$start" ]; then sed -n "\${start},\${count}p" "$file" | awk -v max=${SERVICE_LOG_LINE_BYTES} '{ if (length($0) > max) print substr($0, 1, max) "... [truncated]"; else print }'; fi`,
   ].join("; ");
   const { stdout } = await run("docker", ["exec", containerId, "sh", "-c", script, "vibe-log-reader", filePath, String(cursor.lines), cursor.identity]);
   const lines = stdout.split(/\r?\n/);
@@ -136,11 +149,13 @@ async function getCursors(workspaceId: string) {
 }
 
 export async function resetProcessServiceCursors(workspaceId: string, serviceId: string) {
-  const cursors = await getCursors(workspaceId);
-  for (const key of Object.keys(cursors)) {
-    if (key.startsWith(`${serviceId}:`)) delete cursors[key];
-  }
-  await writeServiceLogCursors(workspaceId, cursors);
+  await serializeLogSync(workspaceId, async () => {
+    const cursors = await getCursors(workspaceId);
+    for (const key of Object.keys(cursors)) {
+      if (key.startsWith(`${serviceId}:`)) delete cursors[key];
+    }
+    await writeServiceLogCursors(workspaceId, cursors);
+  });
 }
 
 export async function registerProcessServices(workspaceId: string, workspacePath: string) {
@@ -150,29 +165,31 @@ export async function registerProcessServices(workspaceId: string, workspacePath
 }
 
 export async function syncProcessServiceLogs(workspaceId: string, containerId: string, services: WorkspaceService[]) {
-  const cursors = await getCursors(workspaceId);
-  let changed = false;
-  for (const service of services.filter((candidate) => candidate.kind === "process")) {
-    for (const source of service.logs) {
-      const key = source.cursorKey
-        ? `${service.id}:${source.cursorKey}`
-        : `${service.id}:log:${encodeURIComponent(source.name)}`;
-      const result = await readLogLines(containerId, source.path, cursors[key] ?? { identity: "", lines: 0 });
-      for (const message of result.lines) {
-        await appendWorkspaceLog(workspaceId, {
-          channel: "service",
-          serviceId: service.id,
-          logName: source.name,
-          stream: source.stream ?? "console",
-          level: "info",
-          message,
-        });
-      }
-      if (cursors[key]?.identity !== result.cursor.identity || cursors[key]?.lines !== result.cursor.lines) {
-        cursors[key] = result.cursor;
-        changed = true;
+  await serializeLogSync(workspaceId, async () => {
+    const cursors = await getCursors(workspaceId);
+    let changed = false;
+    for (const service of services.filter((candidate) => candidate.kind === "process")) {
+      for (const source of service.logs) {
+        const key = source.cursorKey
+          ? `${service.id}:${source.cursorKey}`
+          : `${service.id}:log:${encodeURIComponent(source.name)}`;
+        const result = await readLogLines(containerId, source.path, cursors[key] ?? { identity: "", lines: 0 });
+        for (const message of result.lines) {
+          await appendWorkspaceLog(workspaceId, {
+            channel: "service",
+            serviceId: service.id,
+            logName: source.name,
+            stream: source.stream ?? "console",
+            level: "info",
+            message,
+          });
+        }
+        if (cursors[key]?.identity !== result.cursor.identity || cursors[key]?.lines !== result.cursor.lines) {
+          cursors[key] = result.cursor;
+          changed = true;
+        }
       }
     }
-  }
-  if (changed) await writeServiceLogCursors(workspaceId, cursors);
+    if (changed) await writeServiceLogCursors(workspaceId, cursors);
+  });
 }

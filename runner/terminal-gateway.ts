@@ -21,6 +21,8 @@ import {
 import { getAgentLaunchSpec, getAgentSessionDiscoveryCommand, parseAgentSessionId } from "@/runner/agent-runtime";
 import { removeOrphanContainer } from "@/runner/container-cleanup";
 import { addRealtimeClient } from "@/runner/realtime-hub";
+import { isServiceId, type WorkspaceLogChannel } from "@/runner/logs";
+import { parseLastEventId, pipeWorkspaceLogSse } from "@/runner/log-stream";
 
 const MAX_REPLAY_BYTES = 256 * 1024;
 const MAX_CLIENT_BUFFER = 1024 * 1024;
@@ -661,6 +663,23 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
   server.on("request", (request, response) => {
     void (async () => {
       const url = new URL(request.url || "/", "http://localhost");
+      const logMatch = /^\/internal\/workspaces\/([0-9a-f-]{36})\/logs$/i.exec(url.pathname);
+      if (request.method === "GET" && logMatch) {
+        const channel = url.searchParams.get("channel") as WorkspaceLogChannel | null;
+        const serviceId = url.searchParams.get("serviceId") ?? undefined;
+        if ((channel !== "startup" && channel !== "service")
+          || (channel === "service" && (!serviceId || !isServiceId(serviceId)))) {
+          response.writeHead(400).end("Invalid log stream selector.");
+          return;
+        }
+        const lastEventIdHeader = request.headers["last-event-id"];
+        pipeWorkspaceLogSse(
+          response,
+          { workspaceId: logMatch[1], channel, serviceId },
+          parseLastEventId(Array.isArray(lastEventIdHeader) ? lastEventIdHeader[0] : lastEventIdHeader),
+        );
+        return;
+      }
       const match = /^\/internal\/containers\/([a-f0-9]{64})\/cleanup$/.exec(url.pathname);
       if (request.method !== "POST" || !match) {
         response.writeHead(404).end();
@@ -678,7 +697,7 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
       });
       response.writeHead(204).end();
     })().catch((error) => {
-      console.error("Unable to clean up orphan container:", error instanceof Error ? error.message : error);
+      console.error("Runner gateway request failed:", error instanceof Error ? error.message : error);
       if (!response.headersSent) response.writeHead(500);
       response.end();
     });

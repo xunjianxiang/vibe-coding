@@ -652,13 +652,27 @@ async function syncRunningWorkspaces(db: PrismaClient) {
           ? await readWorkspaceServices(workspace.id)
           : [];
         const configuredServices = await loadProcessServices(workspace.path);
-        const services = JSON.stringify(savedServices) === JSON.stringify(configuredServices)
-          ? savedServices
-          : await registerProcessServices(workspace.id, workspace.path);
-        await syncProcessServiceLogs(workspace.id, workspace.containerId, services);
+        if (JSON.stringify(savedServices) !== JSON.stringify(configuredServices)) {
+          await registerProcessServices(workspace.id, workspace.path);
+        }
       } catch (error) {
-        console.error(`Unable to sync service logs for Workspace ${workspace.id}:`, error instanceof Error ? error.message : error);
+        console.error(`Unable to sync services for Workspace ${workspace.id}:`, error instanceof Error ? error.message : error);
       }
+    }
+  }
+}
+
+export async function syncRunningWorkspaceServiceLogs(db: PrismaClient) {
+  const workspaces = await db.workspace.findMany({
+    where: { status: "RUNNING", desiredState: "RUNNING", containerId: { not: null } },
+    select: { id: true, containerId: true },
+  });
+  for (const workspace of workspaces) {
+    if (!workspace.containerId || !(await hasWorkspaceServiceCatalog(workspace.id))) continue;
+    try {
+      await syncProcessServiceLogs(workspace.id, workspace.containerId, await readWorkspaceServices(workspace.id));
+    } catch (error) {
+      console.error(`Unable to sync service logs for Workspace ${workspace.id}:`, error instanceof Error ? error.message : error);
     }
   }
 }

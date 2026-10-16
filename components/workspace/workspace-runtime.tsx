@@ -102,8 +102,6 @@ function LogViewer({
   workspaceId,
   channel,
   serviceId,
-  initialEntries = [],
-  initialOffset = 0,
   emptyText,
   className = "h-[440px]",
   showControls = true,
@@ -113,15 +111,13 @@ function LogViewer({
   workspaceId: string;
   channel: "startup" | "service";
   serviceId?: string;
-  initialEntries?: LogEntry[];
-  initialOffset?: number;
   emptyText: string;
   className?: string;
   showControls?: boolean;
   fillAvailable?: boolean;
   flush?: boolean;
 }) {
-  const [entries, setEntries] = useState(initialEntries);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
   const [streamFailed, setStreamFailed] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
@@ -136,7 +132,7 @@ function LogViewer({
   };
 
   useEffect(() => {
-    const query = new URLSearchParams({ channel, offset: String(initialOffset) });
+    const query = new URLSearchParams({ channel });
     if (serviceId) query.set("serviceId", serviceId);
     const stream = new EventSource(`/api/workspaces/${workspaceId}/logs?${query}`);
     stream.onopen = () => setStreamFailed(false);
@@ -153,7 +149,7 @@ function LogViewer({
     };
     stream.onerror = () => setStreamFailed(true);
     return () => stream.close();
-  }, [channel, initialOffset, serviceId, workspaceId]);
+  }, [channel, serviceId, workspaceId]);
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -255,15 +251,11 @@ export function WorkspaceRuntime({
   projectId,
   previewHostname,
   initial,
-  initialStartupLogs,
-  initialStartupLogOffset,
 }: {
   workspaceId: string;
   projectId: string;
   previewHostname: string;
   initial: RuntimeState;
-  initialStartupLogs: LogEntry[];
-  initialStartupLogOffset: number;
 }) {
   const [runtime, setRuntime] = useState(initial);
   const [submittingServiceId, setSubmittingServiceId] = useState<string | null>(null);
@@ -421,8 +413,6 @@ export function WorkspaceRuntime({
         <LogViewer
           workspaceId={workspaceId}
           channel="startup"
-          initialEntries={initialStartupLogs}
-          initialOffset={initialStartupLogOffset}
           emptyText="等待开发环境启动输出..."
           className="h-full"
           showControls={false}

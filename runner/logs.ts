@@ -1,6 +1,7 @@
-import { access, appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { RUNNER_ROOT } from "@/runner/config";
+import { normalizeWorkspaceLogEntry, workspaceLogStreamHub } from "@/runner/log-stream";
 
 export type WorkspaceLogChannel = "startup" | "service";
 export type WorkspaceLogStream = "console" | "stdout" | "stderr" | "system";
@@ -53,43 +54,12 @@ function workspaceLogRoot(workspaceId: string) {
   return path.join(WORKSPACE_LOG_DIR, workspaceId);
 }
 
-export function workspaceLogPath(workspaceId: string, channel: WorkspaceLogChannel, serviceId?: string) {
-  const root = workspaceLogRoot(workspaceId);
-  if (channel === "startup") return path.join(root, "startup.jsonl");
-  if (!serviceId || !isServiceId(serviceId)) throw new Error("Invalid service ID.");
-  return path.join(root, "services", `${serviceId}.jsonl`);
-}
-
-export async function readWorkspaceLogSnapshot(
-  workspaceId: string,
-  channel: WorkspaceLogChannel,
-  serviceId?: string,
-  limit = 200,
-) {
-  try {
-    const content = await readFile(workspaceLogPath(workspaceId, channel, serviceId), "utf8");
-    const lines = content.split(/\r?\n/).filter(Boolean);
-    const entries = lines.slice(-limit).flatMap((line) => {
-      try {
-        return [JSON.parse(line) as WorkspaceLogEntry];
-      } catch {
-        return [];
-      }
-    });
-    return { entries, offset: lines.length };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { entries: [], offset: 0 };
-    throw error;
-  }
-}
-
 export async function appendWorkspaceLog(
   workspaceId: string,
   entry: Omit<WorkspaceLogEntry, "timestamp"> & { timestamp?: string },
 ) {
-  const logPath = workspaceLogPath(workspaceId, entry.channel, entry.serviceId);
-  await mkdir(path.dirname(logPath), { recursive: true });
-  await appendFile(logPath, `${JSON.stringify({ ...entry, timestamp: entry.timestamp ?? new Date().toISOString() })}\n`, "utf8");
+  const normalized = normalizeWorkspaceLogEntry({ ...entry, timestamp: entry.timestamp ?? new Date().toISOString() });
+  workspaceLogStreamHub.append({ workspaceId, channel: normalized.channel, serviceId: normalized.serviceId }, normalized);
 }
 
 function serviceCatalogPath(workspaceId: string) {
