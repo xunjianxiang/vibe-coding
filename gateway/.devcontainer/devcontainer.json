@@ -7,7 +7,7 @@
     "--publish=0.0.0.0:${localEnv:GATEWAY_PORT}:8080"
   ],
   "postCreateCommand": "npm ci --omit=dev",
-  "postStartCommand": "npm run start",
+  "postStartCommand": "start-stop-daemon --start --background --make-pidfile --oknodo --pidfile /tmp/gateway.pid --chdir \"$(pwd)\" --startas /bin/sh -- -c 'exec npm run start </dev/null > /tmp/dev.log 2>&1'",
   "overrideCommand": true,
   "remoteUser": "node",
   "shutdownAction": "stopContainer"
