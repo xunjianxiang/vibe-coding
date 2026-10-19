@@ -9,7 +9,7 @@ const SESSION_ID = "01a13940-1244-7452-9a4b-4028e918936f";
 test("a new Codex runtime starts without an implicit resume", () => {
   const spec = getAgentLaunchSpec("codex", CODEX_HOME, CODEX_SQLITE_HOME, null);
 
-  assert.equal(spec.command, "exec codex --no-daemon");
+  assert.equal(spec.command, "exec codex --no-daemon --yolo");
   assert.deepEqual(spec.env, [
     `CODEX_HOME=${CODEX_HOME}`,
     `CODEX_SQLITE_HOME=${CODEX_SQLITE_HOME}`,
@@ -19,7 +19,7 @@ test("a new Codex runtime starts without an implicit resume", () => {
 test("a Codex runtime resumes the explicitly recorded native session", () => {
   const spec = getAgentLaunchSpec("codex", CODEX_HOME, CODEX_SQLITE_HOME, SESSION_ID);
 
-  assert.equal(spec.command, `exec codex resume '${SESSION_ID}' --no-daemon`);
+  assert.equal(spec.command, `exec codex resume '${SESSION_ID}' --no-daemon --yolo`);
   assert.doesNotMatch(spec.command, /--last/);
 });
 

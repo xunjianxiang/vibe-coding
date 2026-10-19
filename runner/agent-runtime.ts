@@ -19,8 +19,8 @@ export function getAgentLaunchSpec(
       }
       return {
         command: nativeSessionId
-          ? `exec codex resume ${shellQuote(nativeSessionId)} --no-daemon`
-          : "exec codex --no-daemon",
+          ? `exec codex resume ${shellQuote(nativeSessionId)} --no-daemon --yolo`
+          : "exec codex --no-daemon --yolo",
         env: [
           `CODEX_HOME=${agentHome}`,
           `CODEX_SQLITE_HOME=${agentSqliteHome}`,
