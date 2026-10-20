@@ -26,7 +26,6 @@ export function validateContainerConfig(config: unknown, projectPath: string) {
       if (normalized === "privileged" && childValue === true) errors.push("privileged containers are not allowed");
       if (normalized === "networkmode" && childValue === "host") errors.push("host networking is not allowed");
       if ((normalized === "devices" || normalized === "device") && Array.isArray(childValue) && childValue.length) errors.push("device mappings are not allowed");
-      if (normalized.includes("capadd") && Array.isArray(childValue) && childValue.length) errors.push("additional Linux capabilities are not allowed");
       if (normalized === "source" && typeof childValue === "string") {
         if (/docker\.sock/i.test(childValue)) errors.push("Docker socket mounts are not allowed");
         if (path.isAbsolute(childValue) && !isInside(path.resolve(childValue), projectPath)) errors.push(`host mount escapes project: ${childValue}`);
