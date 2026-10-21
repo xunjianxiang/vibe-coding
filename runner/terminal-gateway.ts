@@ -481,7 +481,9 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
       ? getAgentLaunchSpec(agent, agentHome, storagePaths.codexSqliteHome, nativeSessionId)
       : null;
     const command = kind === "shell"
-      ? "exec /bin/bash"
+      // Keep the attached terminal explicitly interactive and login-aware so
+      // user shell configuration (profile and bashrc) is loaded consistently.
+      ? "exec /bin/bash -i"
       : agentLaunch!.command;
     const exec = await container.exec({
       AttachStdin: true,
@@ -498,7 +500,7 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
         ...(agentSessionMarker ? [`VIBE_AGENT_SESSION_MARKER=${agentSessionMarker}`] : []),
         ...(agentLaunch?.env ?? []),
       ],
-      Cmd: ["bash", "-lc", `umask 077; printf "%s\\n" "$$" > "$VIBE_TERMINAL_PID_FILE"; ${agentSessionMarker ? "touch \"$VIBE_AGENT_SESSION_MARKER\"; " : ""}${command}`],
+      Cmd: ["bash", "-ilc", `umask 077; printf "%s\\n" "$$" > "$VIBE_TERMINAL_PID_FILE"; ${agentSessionMarker ? "touch \"$VIBE_AGENT_SESSION_MARKER\"; " : ""}${command}`],
     });
     const activityAt = new Date();
     const persistedRuntime = await db.terminalRuntime.create({
