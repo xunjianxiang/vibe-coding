@@ -77,7 +77,7 @@ async function handleEvent(db: PrismaClient, docker: Docker, event: DockerEvent)
 
   const workspace = await db.workspace.findFirst({
     where: { id: workspaceId, projectId, containerId },
-    select: { id: true, projectId: true, sub: true, containerId: true, status: true, desiredState: true },
+    select: { id: true, projectId: true, sub: true, containerId: true, status: true },
   });
   if (!workspace?.containerId) return;
 
@@ -88,6 +88,7 @@ async function handleEvent(db: PrismaClient, docker: Docker, event: DockerEvent)
     await db.workspace.updateMany({
       where: { id: workspaceId, containerId },
       data: {
+        ...(["STOPPING", "DELETING", "DELETED"].includes(workspace.status) ? {} : { status: "RUNNING" as const }),
         containerState: "running",
         containerObservedAt: observedAt,
         containerStartedAt: observedAt,
@@ -120,7 +121,7 @@ async function handleEvent(db: PrismaClient, docker: Docker, event: DockerEvent)
   const inspected = await docker.getContainer(containerId).inspect().catch(() => null);
   const exitCode = typeof inspected?.State.ExitCode === "number" ? inspected.State.ExitCode : null;
   const oom = oomEvidence.has(containerId) || inspected?.State.OOMKilled === true;
-  const requested = workspace.desiredState !== "RUNNING" || workspace.status === "STOPPING" || workspace.status === "DELETING" || stopEvidence.has(containerId);
+  const requested = workspace.status === "STOPPING" || workspace.status === "DELETING" || stopEvidence.has(containerId);
   oomEvidence.delete(containerId);
   stopEvidence.delete(containerId);
   await applyUnexpectedContainerStopped(db, {

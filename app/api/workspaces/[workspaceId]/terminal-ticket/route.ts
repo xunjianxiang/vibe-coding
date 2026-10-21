@@ -22,7 +22,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
       desiredState: "OPEN",
       workspace: {
         status: "RUNNING",
-        desiredState: "RUNNING",
         OR: [
           { error: null },
           { error: { not: { startsWith: workspaceErrorCode.conflict } } },
@@ -38,7 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
   });
   if (!terminal) return Response.json({ error: "Terminal is not available." }, { status: 409 });
   const workspace = terminal.workspace;
-  const inventory = await readContainerInventory();
+  const inventory = await readContainerInventory(getDb());
   const container = inventory.containers.find((candidate) => candidate.id === workspace.containerId);
   const inventoryOwnershipValid = !container || (
     container.projectId === workspace.projectId

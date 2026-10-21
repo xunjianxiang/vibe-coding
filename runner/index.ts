@@ -4,14 +4,16 @@ import path from "node:path";
 process.env.APP_ROOT ??= path.resolve(__dirname, "..");
 
 async function main() {
-  const [{ createRunnerDb }, { scanProjects }, { reconcileOnce, syncRunningWorkspaceServiceLogs }, { startTerminalGateway }, { startDockerMonitor }] = await Promise.all([
+  const [{ createRunnerDb }, { scanProjects }, { reconcileOnce, syncRunningWorkspaceServiceLogs }, { startTerminalGateway }, { startDockerMonitor }, { startProjectWatcher }] = await Promise.all([
     import("@/runner/db"),
     import("@/runner/scanner"),
     import("@/runner/reconciler"),
     import("@/runner/terminal-gateway"),
     import("@/runner/docker-monitor"),
+    import("@/runner/project-watcher"),
   ]);
   const db = createRunnerDb();
+  let stopProjectWatcher: (() => void) | undefined;
   try {
     const command = process.argv[2] || "start";
     if (command === "scan") {
@@ -33,7 +35,18 @@ async function main() {
       return next;
     };
 
-    await startTerminalGateway(db, reconcileSerialized);
+    let projectScan = Promise.resolve();
+    const scanProjectsSerialized = () => {
+      const next = projectScan.then(() => scanProjects(db));
+      projectScan = next.catch(() => undefined);
+      return next;
+    };
+
+    await scanProjectsSerialized().catch((error) => {
+      console.error("Initial project scan failed; manual refresh remains available:", error instanceof Error ? error.message : error);
+    });
+    stopProjectWatcher = await startProjectWatcher(scanProjectsSerialized);
+    await startTerminalGateway(db, reconcileSerialized, scanProjectsSerialized);
     console.log("Workspace Runner started.");
 
     const runLoop = async (name: string, task: () => Promise<void>, intervalMs = 5_000) => {
@@ -48,12 +61,12 @@ async function main() {
     };
 
     await Promise.all([
-      runLoop("Project scan", () => scanProjects(db)),
       runLoop("Workspace reconciliation", reconcileSerialized),
       runLoop("Service log sync", () => syncRunningWorkspaceServiceLogs(db), 1_000),
       startDockerMonitor(db, reconcileSerialized),
     ]);
   } finally {
+    stopProjectWatcher?.();
     await db.$disconnect();
   }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, PlayCircle, Plus, SearchLg, StopCircle, Trash01, XClose } from "@untitledui/icons";
+import { ArrowRight, PlayCircle, Plus, RefreshCcw01, SearchLg, StopCircle, Trash01, XClose } from "@untitledui/icons";
 import { Table, TableCard } from "@/components/application/table/table";
 import { BadgeWithDot } from "@/components/base/badges/badges";
 import { Button } from "@/components/base/buttons/button";
@@ -35,7 +35,6 @@ export type ProjectRow = {
     id: string;
     sub: string;
     status: string;
-    desiredState: string;
     error: string | null;
   };
   container: ContainerState | null;
@@ -62,12 +61,10 @@ const errorMessages: Record<string, string> = {
   CONTAINER_CONFLICT: "项目容器存在冲突，需等待 Runner 清理后再试。",
 };
 
-function environmentLabel(workspaceStatus: string | undefined, desiredState: string | undefined, container: ContainerState | null) {
+function environmentLabel(workspaceStatus: string | undefined, container: ContainerState | null) {
   if (container?.anomaly === "PROJECT_CONFLICT") return { label: "容器冲突", color: "error" as const };
   if (container?.anomaly === "OWNERSHIP_CONFLICT") return { label: "归属冲突", color: "error" as const };
   if (container?.anomaly === "ORPHAN") return { label: "孤儿容器", color: "warning" as const };
-  if (desiredState === "DELETED" && workspaceStatus !== "DELETED") return { label: "释放中", color: "warning" as const };
-  if (desiredState === "STOPPED" && workspaceStatus !== "STOPPED") return { label: "停止中", color: "warning" as const };
   if (container?.running) return { label: "运行中", color: "success" as const };
   if (!workspaceStatus) return { label: "未启动", color: "gray" as const };
   return { label: workspaceLabel(workspaceStatus), color: workspaceColor(workspaceStatus) };
@@ -112,11 +109,12 @@ export function ProjectTable({
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<ReleaseTarget | null>(null);
   const [stoppingWorkspaceIds, setStoppingWorkspaceIds] = useState<string[]>([]);
+  const [scanning, setScanning] = useState(false);
   const activeStoppingWorkspaceIds = stoppingWorkspaceIds.filter((workspaceId) => projects.some((project) =>
     project.workspace?.id === workspaceId
     && project.workspace.status !== "STOPPED"
     && project.workspace.status !== "ERROR"
-    && project.workspace.desiredState !== "DELETED"
+    && project.workspace.status !== "DELETED"
   ));
   const hasWorkspaceTransition = projects.some((project) =>
     project.workspace?.status === "STOPPING" || project.workspace?.status === "DELETING"
@@ -165,6 +163,26 @@ export function ProjectTable({
   }, [currentSub, filter, projects, query]);
 
   const showError = (code?: string) => setError(code ? errorMessages[code] ?? "操作失败，请刷新后重试。" : "操作失败，请刷新后重试。");
+
+  const scanProjects = () => {
+    setError(null);
+    setScanning(true);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/reconcile", { method: "POST" });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          showError(payload?.error);
+          return;
+        }
+        router.refresh();
+      } catch {
+        showError();
+      } finally {
+        setScanning(false);
+      }
+    });
+  };
 
   const mutate = (projectId: string, request: () => Promise<Response>) => {
     setError(null);
@@ -287,6 +305,7 @@ export function ProjectTable({
         </label>
 
         <div className="flex items-center justify-between gap-3 overflow-x-auto">
+          <Button size="sm" color="secondary" iconLeading={RefreshCcw01} isLoading={scanning} isDisabled={scanning} onPress={scanProjects}>刷新状态</Button>
           <div className="flex shrink-0 rounded-lg bg-secondary p-1" role="group" aria-label="筛选项目">
             {projectFilters.map((option) => (
               <button
@@ -330,15 +349,14 @@ export function ProjectTable({
             const workspaceId = project.lease?.workspaceId;
             const stoppingOptimistically = !!workspaceId && activeStoppingWorkspaceIds.includes(workspaceId);
             const workspaceStatus = stoppingOptimistically ? "STOPPING" : project.workspace?.status;
-            const desiredState = stoppingOptimistically ? "STOPPED" : project.workspace?.desiredState;
-            const environment = environmentLabel(workspaceStatus, desiredState, project.container);
-            const canEnter = mine && !!workspaceId && workspaceStatus === "RUNNING" && desiredState === "RUNNING" && project.container?.running === true && !conflict;
+            const environment = environmentLabel(workspaceStatus, project.container);
+            const canEnter = mine && !!workspaceId && workspaceStatus === "RUNNING" && project.container?.running === true && !conflict;
             const stopped = workspaceStatus === "STOPPED";
             const stopping = workspaceStatus === "STOPPING";
             const deleting = workspaceStatus === "DELETING";
             const canClaim = !conflict && !project.lease && !project.workspace && project.status === "READY";
             const canStart = !conflict && mine && project.lease?.state === "CLAIMED" && (!workspaceId || (stopped && !canEnter));
-            const canStop = !conflict && mine && project.lease?.state === "DEVELOPING" && !!workspaceId && desiredState === "RUNNING" && !canEnter && !deleting;
+            const canStop = !conflict && mine && project.lease?.state === "DEVELOPING" && !!workspaceId && workspaceStatus === "RUNNING" && !canEnter && !deleting;
             const hasAction = canClaim || canStart || (canEnter && !deleting) || canStop;
             const unavailableLabel = conflict
                 ? "等待处理"

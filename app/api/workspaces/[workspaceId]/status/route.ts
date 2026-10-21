@@ -13,7 +13,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ wor
     where: { id: workspaceId, sub: session.sub },
     select: {
       status: true,
-      desiredState: true,
       containerId: true,
       containerState: true,
       containerObservedAt: true,
@@ -40,7 +39,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ wor
   if (!workspace) return Response.json({ error: "Not found" }, { status: 404 });
   const [services, inventory, git, runnerHealth] = await Promise.all([
     readWorkspaceServices(workspaceId),
-    readContainerInventory(),
+    readContainerInventory(getDb()),
     readWorkspaceGitStatus({
       containerId: workspace.containerId,
       workspaceId,
@@ -56,7 +55,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ wor
   const conflict = container?.anomaly === "PROJECT_CONFLICT" || container?.anomaly === "OWNERSHIP_CONFLICT";
   const containerRunning = workspace.containerState === "running"
     || (workspace.containerState === null && container?.running === true);
-  const writable = leaseValid && developing && workspace.status === "RUNNING" && workspace.desiredState === "RUNNING" && containerRunning && !conflict;
+  const writable = leaseValid && developing && workspace.status === "RUNNING" && containerRunning && !conflict;
   const accessReason = writable
     ? null
     : !leaseValid
@@ -68,7 +67,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ wor
           : "WORKSPACE_NOT_RUNNING";
   return Response.json({
     status: workspace.status,
-    desiredState: workspace.desiredState,
     error: workspace.error,
     activeAt: workspace.activeAt,
     expiresAt: workspace.expiresAt,

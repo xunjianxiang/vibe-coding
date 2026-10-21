@@ -33,7 +33,6 @@ type WorkspaceService = {
 
 type RuntimeState = {
   status: string;
-  desiredState: string;
   error: string | null;
   activeAt: string | null;
   expiresAt: string | null;
@@ -289,7 +288,6 @@ export function WorkspaceRuntime({
       if (!response.ok) throw new Error(payload?.error || "Workspace 操作失败。");
       setRuntime((current) => ({
         ...current,
-        desiredState: action === "start" ? "RUNNING" : "STOPPED",
         status: payload?.status ?? (action === "start" ? "PENDING" : "STOPPING"),
         access: { ...current.access, writable: false },
       }));
@@ -313,7 +311,6 @@ export function WorkspaceRuntime({
       setRuntime((current) => ({
         ...current,
         status: "STOPPED",
-        desiredState: "STOPPED",
         container: current.container ? {
           ...current.container,
           running: false,
@@ -354,7 +351,7 @@ export function WorkspaceRuntime({
       if (disposed
         || document.visibilityState !== "visible"
         || current.status !== "RUNNING"
-        || current.desiredState !== "RUNNING"
+        || current.status !== "RUNNING"
         || activityInFlightRef.current) return;
 
       activityInFlightRef.current = true;

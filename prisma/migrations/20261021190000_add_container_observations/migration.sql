@@ -1,0 +1,25 @@
+CREATE TABLE `container_observations` (
+  `id` VARCHAR(36) NOT NULL,
+  `container_id` VARCHAR(255) NOT NULL,
+  `name` VARCHAR(255) NULL,
+  `workspace_id` VARCHAR(36) NULL,
+  `project_id` VARCHAR(36) NULL,
+  `expected_project_id` VARCHAR(36) NULL,
+  `expected_running` BOOLEAN NOT NULL,
+  `state` VARCHAR(32) NOT NULL,
+  `running` BOOLEAN NOT NULL,
+  `exit_code` INT NULL,
+  `finished_at` DATETIME(3) NULL,
+  `oom_killed` BOOLEAN NOT NULL DEFAULT false,
+  `dead` BOOLEAN NOT NULL DEFAULT false,
+  `error` TEXT NULL,
+  `anomaly` VARCHAR(32) NULL,
+  `observed_at` DATETIME(3) NOT NULL,
+  `updated_at` DATETIME(3) NOT NULL,
+
+  UNIQUE INDEX `container_observations_container_id_key` (`container_id`),
+  INDEX `container_observations_workspace_id_idx` (`workspace_id`),
+  INDEX `container_observations_project_id_running_idx` (`project_id`, `running`),
+  INDEX `container_observations_anomaly_idx` (`anomaly`),
+  PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

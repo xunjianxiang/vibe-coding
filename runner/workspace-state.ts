@@ -24,12 +24,10 @@ export async function applyUnexpectedContainerStopped(db: PrismaClient, input: C
         projectId: input.projectId,
         sub: input.sub,
         status: "RUNNING",
-        desiredState: "RUNNING",
         containerId: input.containerId,
       },
       data: {
         status: "STOPPED",
-        desiredState: "STOPPED",
         activeAt: null,
         expiresAt: null,
         error: null,
@@ -70,7 +68,6 @@ export async function applyUnexpectedContainerStopped(db: PrismaClient, input: C
   });
   publishToUser(input.sub, "workspace.status.changed", {
     status: "STOPPED",
-    desiredState: "STOPPED",
     containerState: input.state ?? (input.containerMissing ? "missing" : "exited"),
     exitCode: input.exitCode ?? null,
     stopReason: input.reason,

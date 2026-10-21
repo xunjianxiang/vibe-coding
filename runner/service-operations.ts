@@ -109,7 +109,6 @@ export async function reconcileServiceOperations(db: PrismaClient) {
           id: operation.workspaceId,
           sub: operation.requestedBy,
           status: "RUNNING",
-          desiredState: "RUNNING",
           containerId: { not: null },
           project: {
             lease: {

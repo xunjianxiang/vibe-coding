@@ -32,6 +32,48 @@ export function cleanupOrphanContainer(containerId: string): Promise<RunnerClean
   });
 }
 
+export function scanProjectsOnRunner(): Promise<{ ok: true } | { ok: false; status: 503; error: string }> {
+  return new Promise((resolve) => {
+    const clientRequest = request({
+      socketPath: RUNNER_SOCKET_PATH,
+      path: "/internal/reconcile/projects",
+      method: "POST",
+      headers: { connection: "close" },
+      timeout: 120_000,
+    }, (response) => {
+      response.resume();
+      response.once("end", () => {
+        if (response.statusCode === 204) return resolve({ ok: true });
+        resolve({ ok: false, status: 503, error: "RUNNER_UNAVAILABLE" });
+      });
+    });
+    clientRequest.once("timeout", () => clientRequest.destroy(new Error("Project scan timed out.")));
+    clientRequest.once("error", () => resolve({ ok: false, status: 503, error: "RUNNER_UNAVAILABLE" }));
+    clientRequest.end();
+  });
+}
+
+export function reconcileRunner(): Promise<{ ok: true } | { ok: false; status: 503; error: string }> {
+  return new Promise((resolve) => {
+    const clientRequest = request({
+      socketPath: RUNNER_SOCKET_PATH,
+      path: "/internal/reconcile/all",
+      method: "POST",
+      headers: { connection: "close" },
+      timeout: 120_000,
+    }, (response) => {
+      response.resume();
+      response.once("end", () => {
+        if (response.statusCode === 204) return resolve({ ok: true });
+        resolve({ ok: false, status: 503, error: "RUNNER_UNAVAILABLE" });
+      });
+    });
+    clientRequest.once("timeout", () => clientRequest.destroy(new Error("Runner reconcile timed out.")));
+    clientRequest.once("error", () => resolve({ ok: false, status: 503, error: "RUNNER_UNAVAILABLE" }));
+    clientRequest.end();
+  });
+}
+
 type WorkspaceLogStreamRequest = {
   workspaceId: string;
   channel: WorkspaceLogChannel;

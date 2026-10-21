@@ -32,14 +32,13 @@ export async function POST(request: Request, context: { params: Promise<unknown>
       id: workspaceId,
       sub: session.sub,
       status: "RUNNING",
-      desiredState: "RUNNING",
       containerId: { not: null },
       project: { lease: { is: { sub: session.sub, workspaceId, state: "DEVELOPING" } } },
     },
     select: { id: true, projectId: true, containerId: true },
   });
   if (!workspace) return Response.json({ error: "workspace_not_running" }, { status: 409 });
-  const inventory = await readContainerInventory();
+  const inventory = await readContainerInventory(db);
   const container = inventory.containers.find((candidate) => candidate.id === workspace.containerId);
   if (!container?.running || container.projectId !== workspace.projectId || container.workspaceId !== workspaceId) {
     return Response.json({ error: "container_not_available" }, { status: 409 });

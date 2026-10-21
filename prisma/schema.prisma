@@ -245,6 +245,31 @@ model RunnerHealth {
   @@map("runner_health")
 }
 
+model ContainerObservation {
+  id                String   @id @default(uuid()) @db.VarChar(36)
+  containerId       String   @unique @map("container_id") @db.VarChar(255)
+  name              String?  @db.VarChar(255)
+  workspaceId       String?  @map("workspace_id") @db.VarChar(36)
+  projectId         String?  @map("project_id") @db.VarChar(36)
+  expectedProjectId String?  @map("expected_project_id") @db.VarChar(36)
+  expectedRunning   Boolean  @map("expected_running")
+  state             String   @db.VarChar(32)
+  running           Boolean
+  exitCode          Int?     @map("exit_code")
+  finishedAt        DateTime? @map("finished_at")
+  oomKilled         Boolean  @default(false) @map("oom_killed")
+  dead              Boolean  @default(false)
+  error             String?  @db.Text
+  anomaly           String?  @db.VarChar(32)
+  observedAt        DateTime @map("observed_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([workspaceId])
+  @@index([projectId, running])
+  @@index([anomaly])
+  @@map("container_observations")
+}
+
 model ServiceOperation {
   id             String                 @id @default(uuid()) @db.VarChar(36)
   workspaceId    String                 @map("workspace_id") @db.VarChar(36)

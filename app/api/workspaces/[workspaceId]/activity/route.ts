@@ -20,14 +20,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
       containerId: true,
       containerState: true,
       status: true,
-      desiredState: true,
       expiresAt: true,
       project: { select: { lease: true } },
     },
   });
   if (!workspace) return Response.json({ error: "WORKSPACE_NOT_FOUND" }, { status: 404 });
 
-  const inventory = await readContainerInventory();
+  const inventory = await readContainerInventory(db);
   const container = inventory.containers.find((candidate) => candidate.id === workspace.containerId) ?? null;
   const leaseValid = workspace.project.lease?.sub === session.sub
     && workspace.project.lease.workspaceId === workspaceId
@@ -39,11 +38,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
   );
   const containerAvailable = !!workspace.containerId && workspace.containerState === "running" && inventoryOwnershipValid;
 
-  if (!leaseValid || workspace.status !== "RUNNING" || workspace.desiredState !== "RUNNING" || !containerAvailable) {
+  if (!leaseValid || workspace.status !== "RUNNING" || !containerAvailable) {
     return Response.json({
       error: "WORKSPACE_NOT_RUNNING",
       status: workspace.status,
-      desiredState: workspace.desiredState,
       expiresAt: workspace.expiresAt,
       container: container ? { id: container.id, state: container.state, running: container.running, anomaly: container.anomaly } : null,
     }, { status: 409 });
@@ -54,7 +52,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
     where: {
       id: workspaceId,
       status: "RUNNING",
-      desiredState: "RUNNING",
       containerId: workspace.containerId,
     },
     data: { expiresAt },
@@ -65,7 +62,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
 
   return Response.json({
     status: "RUNNING",
-    desiredState: "RUNNING",
     expiresAt,
     container: { id: workspace.containerId, state: workspace.containerState, running: true, anomaly: container?.anomaly ?? null },
   });

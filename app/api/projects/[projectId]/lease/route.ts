@@ -20,7 +20,7 @@ export async function POST(_request: NextRequest, context: Context) {
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
   const projectId = await getProjectId(context);
   const db = getDb();
-  if (projectHasContainerConflict(await readContainerInventory(), projectId)) {
+  if (projectHasContainerConflict(await readContainerInventory(db), projectId)) {
     return Response.json({ error: "CONTAINER_CONFLICT" }, { status: 409 });
   }
 

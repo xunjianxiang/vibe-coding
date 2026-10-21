@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, context: { params: Promise<unkn
   }
   const projectId = params.projectId;
   const db = getDb();
-  if (projectHasContainerConflict(await readContainerInventory(), projectId)) {
+  if (projectHasContainerConflict(await readContainerInventory(db), projectId)) {
     return Response.json({ error: "CONTAINER_CONFLICT" }, { status: 409 });
   }
 
@@ -45,12 +45,12 @@ export async function POST(request: NextRequest, context: { params: Promise<unkn
 
       if (lease.workspaceId) {
         const stopped = await tx.workspace.findFirst({
-          where: { id: lease.workspaceId, projectId, sub: session.sub, status: "STOPPED", desiredState: "STOPPED" },
+          where: { id: lease.workspaceId, projectId, sub: session.sub, status: "STOPPED" },
         });
         if (!stopped) throw new Error("WORKSPACE_CONFLICT");
         const resumed = await tx.workspace.update({
           where: { id: stopped.id },
-          data: { status: "PENDING", desiredState: "RUNNING", error: null, version: { increment: 1 } },
+          data: { status: "PENDING", error: null, version: { increment: 1 } },
         });
         await tx.lease.update({
           where: { projectId },
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, context: { params: Promise<unkn
       }
 
       const created = await tx.workspace.create({
-        data: { projectId, sub: session.sub, requestId, path: project.path, status: "PENDING", desiredState: "RUNNING" },
+        data: { projectId, sub: session.sub, requestId, path: project.path, status: "PENDING" },
       });
       const updated = await tx.lease.updateMany({
         where: { projectId, sub: session.sub, state: "CLAIMED", workspaceId: null },

@@ -96,7 +96,6 @@ async function runtimeAuthorized(db: PrismaClient, workspaceId: string, sub?: st
       id: workspaceId,
       ...(sub ? { sub } : {}),
       status: "RUNNING",
-      desiredState: "RUNNING",
       OR: [
         { error: null },
         { error: { not: { startsWith: workspaceErrorCode.conflict } } },
@@ -394,7 +393,11 @@ export async function closeWorkspaceTerminals(workspaceId: string, reason = "Wor
   ]);
 }
 
-export async function startTerminalGateway(db: PrismaClient, reconcileNow: () => Promise<void>) {
+export async function startTerminalGateway(
+  db: PrismaClient,
+  reconcileNow: () => Promise<void>,
+  scanProjectsNow?: () => Promise<void>,
+) {
   runtimeDb = db;
   const docker = new Docker();
   await cleanupPersistedRuntimes(db, docker);
@@ -439,7 +442,7 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
       include: { workspace: true },
     });
     const workspace = terminal?.workspace;
-    if (!workspace?.containerId || workspace.status !== "RUNNING" || workspace.desiredState !== "RUNNING") {
+    if (!workspace?.containerId || workspace.status !== "RUNNING") {
       throw new Error("Workspace is not running.");
     }
     if (!terminal) throw new Error("Terminal is not open.");
@@ -687,6 +690,25 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
         return;
       }
       const match = /^\/internal\/containers\/([a-f0-9]{64})\/cleanup$/.exec(url.pathname);
+      if (request.method === "POST" && url.pathname === "/internal/reconcile/projects") {
+        if (!scanProjectsNow) {
+          response.writeHead(503).end("Project scanner is unavailable.");
+          return;
+        }
+        await scanProjectsNow();
+        response.writeHead(204).end();
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/internal/reconcile/all") {
+        if (!scanProjectsNow) {
+          response.writeHead(503).end("Reconciler is unavailable.");
+          return;
+        }
+        await scanProjectsNow();
+        await reconcileNow();
+        response.writeHead(204).end();
+        return;
+      }
       if (request.method !== "POST" || !match) {
         response.writeHead(404).end();
         return;

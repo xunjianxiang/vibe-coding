@@ -28,7 +28,7 @@ async function Dashboard() {
     }),
     sso.users.getCurrent().catch(() => null),
     sso.users.list().catch(() => []),
-    readContainerInventory(),
+    readContainerInventory(db),
   ]);
   const ssoUsersBySubject = indexSsoUsers(ssoUsers);
   if (profile) ssoUsersBySubject.set(session.sub, profile);
@@ -52,7 +52,6 @@ async function Dashboard() {
         id: workspace.id,
         sub: workspace.sub,
         status: workspace.status,
-        desiredState: workspace.desiredState,
         error: workspace.error,
       } : null,
       container: (() => {

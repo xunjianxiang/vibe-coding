@@ -69,7 +69,7 @@ async function stopOwnedContainer(containerId: string, workspaceId?: string, com
 async function reconcileContainerInventory(db: PrismaClient) {
   const [containers, workspaces, leases] = await Promise.all([
     listManagedContainers(),
-    db.workspace.findMany({ select: { id: true, projectId: true, containerId: true, status: true, desiredState: true, error: true } }),
+    db.workspace.findMany({ select: { id: true, projectId: true, containerId: true, status: true, error: true } }),
     db.lease.findMany({ select: { projectId: true, workspaceId: true } }),
   ]);
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
@@ -107,7 +107,7 @@ async function reconcileContainerInventory(db: PrismaClient) {
       workspaceId,
       projectId,
       expectedProjectId: workspace?.projectId ?? null,
-      expectedRunning: workspace?.desiredState === "RUNNING" && !["STOPPED", "DELETED"].includes(workspace.status),
+      expectedRunning: workspace?.status === "RUNNING",
       state: container.State,
       running: isRunningContainer(container),
       exitCode: stoppedDetails?.State.ExitCode ?? null,
@@ -120,7 +120,7 @@ async function reconcileContainerInventory(db: PrismaClient) {
       anomaly,
     });
     const shouldAttachToPreview = isRunningContainer(container) && workspaceId && anomaly === null
-      && workspace?.desiredState === "RUNNING" && !["STOPPED", "DELETED"].includes(workspace.status);
+      && workspace?.status === "RUNNING";
     if (shouldAttachToPreview) {
       await connectManagedContainerToPreviewNetwork(container.Id, workspaceId).catch((error) => {
         console.error(`Unable to connect managed container ${container.Id} to the preview network:`, error);
@@ -178,7 +178,7 @@ async function reconcileContainerInventory(db: PrismaClient) {
     }
   }
 
-  await writeContainerInventory({
+  await writeContainerInventory(db, {
     updatedAt: new Date().toISOString(),
     containers: inventory,
     conflictProjectIds,
@@ -228,7 +228,6 @@ async function stopWorkspace(db: PrismaClient, workspace: Workspace) {
   ]);
   publishToUser(workspace.sub, "workspace.status.changed", {
     status: "STOPPED",
-    desiredState: "STOPPED",
     containerState: "exited",
     stopReason: "REQUESTED",
   }, { projectId: workspace.projectId, workspaceId: workspace.id });
@@ -262,17 +261,17 @@ async function deleteWorkspaceResources(db: PrismaClient, workspace: Workspace) 
   ]);
 }
 
-async function reconcileDesiredStates(db: PrismaClient) {
-  const stopping = await db.workspace.findMany({ where: { desiredState: "STOPPED", status: { notIn: ["STOPPED", "DELETED"] } } });
+async function reconcileLifecycleActions(db: PrismaClient) {
+  const stopping = await db.workspace.findMany({ where: { status: "STOPPING" } });
   for (const workspace of stopping) {
     try { await stopWorkspace(db, workspace); } catch (error) {
-      await db.workspace.update({ where: { id: workspace.id }, data: { status: "ERROR", error: error instanceof Error ? error.message : "Workspace stop failed." } });
+      await db.workspace.update({ where: { id: workspace.id }, data: { status: "STOPPING", error: error instanceof Error ? error.message : "Workspace stop failed." } });
     }
   }
-  const deleting = await db.workspace.findMany({ where: { desiredState: "DELETED", status: { not: "DELETED" } } });
+  const deleting = await db.workspace.findMany({ where: { status: "DELETING" } });
   for (const workspace of deleting) {
     try { await deleteWorkspaceResources(db, workspace); } catch (error) {
-      await db.workspace.update({ where: { id: workspace.id }, data: { status: "ERROR", error: error instanceof Error ? error.message : "Workspace deletion failed." } });
+      await db.workspace.update({ where: { id: workspace.id }, data: { status: "DELETING", error: error instanceof Error ? error.message : "Workspace deletion failed." } });
     }
   }
 }
@@ -309,9 +308,9 @@ function parseJson<T>(stdout: string): T {
 async function versionIsCurrent(db: PrismaClient, workspace: Workspace) {
   const current = await db.workspace.findUnique({
     where: { id: workspace.id },
-    select: { version: true, desiredState: true },
+    select: { version: true, status: true },
   });
-  return current?.version === workspace.version && current.desiredState === "RUNNING";
+  return current?.version === workspace.version && ["PENDING", "CREATING", "STARTING"].includes(current.status);
 }
 
 async function inspectContainer(containerId: string) {
@@ -464,7 +463,7 @@ function appendStartupSystem(workspaceId: string, message: string, level: "info"
 async function recoverStuckWorkspaces(db: PrismaClient) {
   const cutoff = new Date(Date.now() - 2 * 60_000);
   const stuck = await db.workspace.findMany({
-    where: { desiredState: "RUNNING", status: { in: ["CREATING", "STARTING"] }, updatedAt: { lt: cutoff } },
+    where: { status: { in: ["CREATING", "STARTING"] }, updatedAt: { lt: cutoff } },
   });
   for (const workspace of stuck) {
     const reason = "Workspace startup was interrupted; Runner will retry devcontainer up.";
@@ -475,7 +474,7 @@ async function recoverStuckWorkspaces(db: PrismaClient) {
 
 async function reconcileRunningContainers(db: PrismaClient) {
   const workspaces = await db.workspace.findMany({
-    where: { status: "RUNNING", desiredState: "RUNNING", containerId: { not: null } },
+    where: { status: "RUNNING", containerId: { not: null } },
     select: { id: true, projectId: true, sub: true, containerId: true },
   });
 
@@ -506,12 +505,12 @@ async function reconcileRunningContainers(db: PrismaClient) {
 
 async function reconcileIdleWorkspaces(db: PrismaClient) {
   await db.workspace.updateMany({
-    where: { status: "RUNNING", desiredState: "RUNNING", expiresAt: null },
+    where: { status: "RUNNING", expiresAt: null },
     data: { expiresAt: workspaceIdleDeadline() },
   });
 
   const expired = await db.workspace.findMany({
-    where: { status: "RUNNING", desiredState: "RUNNING", expiresAt: { lte: new Date() } },
+    where: { status: "RUNNING", expiresAt: { lte: new Date() } },
     select: { id: true, expiresAt: true },
   });
   for (const workspace of expired) {
@@ -521,10 +520,9 @@ async function reconcileIdleWorkspaces(db: PrismaClient) {
       where: {
         id: workspace.id,
         status: "RUNNING",
-        desiredState: "RUNNING",
         expiresAt: workspace.expiresAt,
       },
-      data: { status: "STOPPING", desiredState: "STOPPED", version: { increment: 1 } },
+      data: { status: "STOPPING", version: { increment: 1 } },
     });
     if (claimed.count === 1) {
       await appendStartupSystem(workspace.id, "Workspace stopped after 10 minutes without active use.");
@@ -534,7 +532,7 @@ async function reconcileIdleWorkspaces(db: PrismaClient) {
 
 async function startWorkspace(db: PrismaClient, workspace: Workspace) {
   const claimed = await db.workspace.updateMany({
-    where: { id: workspace.id, version: workspace.version, status: { in: ["PENDING", "ERROR"] }, desiredState: "RUNNING" },
+    where: { id: workspace.id, version: workspace.version, status: { in: ["PENDING", "ERROR"] } },
     data: { status: "CREATING", error: null },
   });
   if (claimed.count !== 1) return;
@@ -637,7 +635,6 @@ async function startWorkspace(db: PrismaClient, workspace: Workspace) {
     await appendStartupSystem(workspace.id, "Workspace is ready; opening the development view.");
     publishToUser(workspace.sub, "workspace.status.changed", {
       status: "RUNNING",
-      desiredState: "RUNNING",
       containerState: "running",
     }, { projectId: workspace.projectId, workspaceId: workspace.id });
   } catch (error) {
@@ -653,7 +650,7 @@ async function startWorkspace(db: PrismaClient, workspace: Workspace) {
 
 async function syncRunningWorkspaces(db: PrismaClient) {
   const workspaces = await db.workspace.findMany({
-    where: { status: "RUNNING", desiredState: "RUNNING", containerId: { not: null } },
+    where: { status: "RUNNING", containerId: { not: null } },
   });
   for (const workspace of workspaces) {
     if (workspace.containerId) {
@@ -680,7 +677,7 @@ async function syncRunningWorkspaces(db: PrismaClient) {
 
 export async function syncRunningWorkspaceServiceLogs(db: PrismaClient) {
   const workspaces = await db.workspace.findMany({
-    where: { status: "RUNNING", desiredState: "RUNNING", containerId: { not: null } },
+    where: { status: "RUNNING", containerId: { not: null } },
     select: { id: true, containerId: true },
   });
   for (const workspace of workspaces) {
@@ -695,12 +692,12 @@ export async function syncRunningWorkspaceServiceLogs(db: PrismaClient) {
 
 export async function reconcileOnce(db: PrismaClient) {
   if (isGatewayEnabled()) await ensurePreviewNetwork();
-  await reconcileDesiredStates(db);
+  await reconcileLifecycleActions(db);
   await recoverStuckWorkspaces(db);
   await reconcileContainerInventory(db);
   await reconcileRunningContainers(db);
   const workspaces = await db.workspace.findMany({
-    where: { desiredState: "RUNNING", status: { in: ["PENDING", "ERROR"] } },
+    where: { status: { in: ["PENDING", "ERROR"] } },
     orderBy: { createdAt: "asc" },
   });
   for (const workspace of workspaces) {
@@ -713,5 +710,5 @@ export async function reconcileOnce(db: PrismaClient) {
   await reconcileServiceOperations(db);
   await syncRunningWorkspaces(db);
   await reconcileIdleWorkspaces(db);
-  await reconcileDesiredStates(db);
+  await reconcileLifecycleActions(db);
 }

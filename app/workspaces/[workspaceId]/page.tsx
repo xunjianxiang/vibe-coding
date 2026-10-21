@@ -38,7 +38,7 @@ async function WorkspaceContent({ params }: { params: Promise<{ workspaceId: str
   const codex = workspace.codexSessions[0];
   const [services, inventory, profile, git, runnerHealth] = await Promise.all([
     readWorkspaceServices(workspace.id),
-    readContainerInventory(),
+    readContainerInventory(getDb()),
     createServerSso(requestOrigin).users.getCurrent().catch(() => null),
     readWorkspaceGitStatus({
       containerId: workspace.containerId,
@@ -55,7 +55,7 @@ async function WorkspaceContent({ params }: { params: Promise<{ workspaceId: str
   const conflict = container?.anomaly === "PROJECT_CONFLICT" || container?.anomaly === "OWNERSHIP_CONFLICT";
   const containerRunning = workspace.containerState === "running"
     || (workspace.containerState === null && container?.running === true);
-  const writable = leaseValid && developing && workspace.status === "RUNNING" && workspace.desiredState === "RUNNING" && containerRunning && !conflict;
+  const writable = leaseValid && developing && workspace.status === "RUNNING" && containerRunning && !conflict;
   const accessReason = writable
     ? null
     : !leaseValid
@@ -90,7 +90,6 @@ async function WorkspaceContent({ params }: { params: Promise<{ workspaceId: str
           previewHostname={new URL(requestOrigin).hostname}
           initial={{
             status: workspace.status,
-            desiredState: workspace.desiredState,
             error: workspace.error,
             activeAt: workspace.activeAt?.toISOString() ?? null,
             expiresAt: workspace.expiresAt?.toISOString() ?? null,

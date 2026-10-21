@@ -14,8 +14,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
     const workspace = await tx.workspace.findUnique({ where: { id: workspaceId } });
     if (!workspace) return "WORKSPACE_NOT_FOUND" as const;
     if (workspace.sub !== session.sub) return "WORKSPACE_ACCESS_DENIED" as const;
-    if (workspace.desiredState === "STOPPED" || workspace.status === "STOPPED") return "ACCEPTED" as const;
-    if (workspace.desiredState === "DELETED" || workspace.status === "DELETED") return "WORKSPACE_NOT_RUNNING" as const;
+    if (workspace.status === "STOPPED") return "ACCEPTED" as const;
+    if (workspace.status === "DELETED" || workspace.status === "DELETING") return "WORKSPACE_NOT_RUNNING" as const;
     await tx.$queryRaw`SELECT project_id FROM leases WHERE project_id = ${workspace.projectId} FOR UPDATE`;
     const lease = await tx.lease.findUnique({ where: { projectId: workspace.projectId } });
     if (lease?.sub !== session.sub || lease.state !== "DEVELOPING" || lease.workspaceId !== workspaceId) {
@@ -23,7 +23,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
     }
     await tx.workspace.update({
       where: { id: workspaceId },
-      data: { desiredState: "STOPPED", status: "STOPPING", version: { increment: 1 } },
+      data: { status: "STOPPING", version: { increment: 1 } },
     });
     return "ACCEPTED" as const;
   });

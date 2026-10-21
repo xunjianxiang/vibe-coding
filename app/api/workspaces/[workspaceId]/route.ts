@@ -13,13 +13,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ w
     const workspace = await tx.workspace.findUnique({ where: { id: workspaceId } });
     if (!workspace) return "WORKSPACE_NOT_FOUND" as const;
     if (workspace.sub !== session.sub) return "WORKSPACE_ACCESS_DENIED" as const;
-    if (workspace.status === "DELETED" || workspace.desiredState === "DELETED") return "ACCEPTED" as const;
+    if (workspace.status === "DELETED" || workspace.status === "DELETING") return "ACCEPTED" as const;
     await tx.$queryRaw`SELECT project_id FROM leases WHERE project_id = ${workspace.projectId} FOR UPDATE`;
     const lease = await tx.lease.findUnique({ where: { projectId: workspace.projectId } });
     if (lease?.sub !== session.sub || lease.workspaceId !== workspaceId) return "WORKSPACE_ACCESS_DENIED" as const;
     await tx.workspace.update({
       where: { id: workspaceId },
-      data: { desiredState: "DELETED", status: "DELETING", version: { increment: 1 } },
+      data: { status: "DELETING", version: { increment: 1 } },
     });
     return "ACCEPTED" as const;
   });

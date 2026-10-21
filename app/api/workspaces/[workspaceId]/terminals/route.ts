@@ -60,7 +60,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ wo
       workspace: {
         sub: session.sub,
         status: "RUNNING",
-        desiredState: "RUNNING",
         project: { lease: { is: { sub: session.sub, workspaceId, state: "DEVELOPING" } } },
       },
     },
@@ -69,7 +68,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ wo
   if (!terminal) return Response.json({ error: "TERMINAL_NOT_FOUND" }, { status: 404 });
 
   const updated = await db.workspace.updateMany({
-    where: { id: workspaceId, sub: session.sub, status: "RUNNING", desiredState: "RUNNING" },
+    where: { id: workspaceId, sub: session.sub, status: "RUNNING" },
     data: { activeTerminalId: terminal.id },
   });
   if (updated.count !== 1) return Response.json({ error: "WORKSPACE_NOT_RUNNING" }, { status: 409 });
@@ -98,7 +97,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ wor
           id: workspaceId,
           sub: session.sub,
           status: "RUNNING",
-          desiredState: "RUNNING",
           project: { lease: { is: { sub: session.sub, workspaceId, state: "DEVELOPING" } } },
         },
         select: { id: true },

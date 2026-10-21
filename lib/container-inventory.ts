@@ -1,6 +1,4 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { RUNNER_ROOT } from "@/lib/runtime-paths";
+import type { PrismaClient } from "@prisma/client";
 
 export type ContainerInventoryEntry = {
   id: string;
@@ -26,14 +24,32 @@ export type ContainerInventorySnapshot = {
   orphanCount: number;
 };
 
-const inventoryPath = path.join(RUNNER_ROOT, "container-inventory.json");
+type Db = Pick<PrismaClient, "containerObservation" | "$transaction">;
 
-export async function readContainerInventory(): Promise<ContainerInventorySnapshot> {
-  try {
-    return JSON.parse(await readFile(inventoryPath, "utf8")) as ContainerInventorySnapshot;
-  } catch {
-    return { updatedAt: new Date(0).toISOString(), containers: [], conflictProjectIds: [], orphanCount: 0 };
-  }
+export async function readContainerInventory(db: Db): Promise<ContainerInventorySnapshot> {
+  const observations = await db.containerObservation.findMany({ orderBy: { containerId: "asc" } });
+  const containers = observations.map((item) => ({
+    id: item.containerId,
+    name: item.name,
+    workspaceId: item.workspaceId,
+    projectId: item.projectId,
+    expectedProjectId: item.expectedProjectId,
+    expectedRunning: item.expectedRunning,
+    state: item.state,
+    running: item.running,
+    exitCode: item.exitCode,
+    finishedAt: item.finishedAt?.toISOString() ?? null,
+    oomKilled: item.oomKilled,
+    dead: item.dead,
+    error: item.error,
+    anomaly: item.anomaly as ContainerInventoryEntry["anomaly"],
+  }));
+  return {
+    updatedAt: observations.reduce((latest, item) => item.observedAt > latest ? item.observedAt : latest, new Date(0)).toISOString(),
+    containers,
+    conflictProjectIds: [...new Set(containers.filter((item) => item.anomaly === "PROJECT_CONFLICT" && item.projectId).map((item) => item.projectId as string))],
+    orphanCount: containers.filter((item) => item.anomaly === "ORPHAN").length,
+  };
 }
 
 export function projectHasContainerConflict(snapshot: ContainerInventorySnapshot, projectId: string) {
@@ -51,33 +67,32 @@ export function isSafeOrphanCleanup(
   return workspace === null || (workspace.containerId !== null && workspace.containerId !== containerId);
 }
 
-function comparableInventory(snapshot: ContainerInventorySnapshot) {
-  return JSON.stringify({
-    containers: [...snapshot.containers].sort((left, right) => left.id.localeCompare(right.id)),
-    conflictProjectIds: [...snapshot.conflictProjectIds].sort(),
-    orphanCount: snapshot.orphanCount,
-  });
-}
-
-export async function writeContainerInventory(snapshot: ContainerInventorySnapshot) {
-  const current = await readContainerInventory();
-  if (comparableInventory(current) === comparableInventory(snapshot)) return;
-  const directory = path.dirname(inventoryPath);
-  const temporary = `${inventoryPath}.${process.pid}.${Date.now()}.tmp`;
-  await mkdir(directory, { recursive: true });
-  try {
-    await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await rename(temporary, inventoryPath);
-        break;
-      } catch (error) {
-        const code = error && typeof error === "object" && "code" in error ? error.code : null;
-        if (!(["EACCES", "EBUSY", "EPERM"].includes(String(code))) || attempt >= 5) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 25 * (2 ** attempt)));
-      }
+export async function writeContainerInventory(db: Db, snapshot: ContainerInventorySnapshot) {
+  const ids = snapshot.containers.map((entry) => entry.id);
+  await db.$transaction(async (tx) => {
+    await tx.containerObservation.deleteMany(ids.length ? { where: { containerId: { notIn: ids } } } : undefined);
+    for (const entry of snapshot.containers) {
+      const data = {
+        name: entry.name,
+        workspaceId: entry.workspaceId,
+        projectId: entry.projectId,
+        expectedProjectId: entry.expectedProjectId,
+        expectedRunning: entry.expectedRunning,
+        state: entry.state,
+        running: entry.running,
+        exitCode: entry.exitCode,
+        finishedAt: entry.finishedAt ? new Date(entry.finishedAt) : null,
+        oomKilled: entry.oomKilled,
+        dead: entry.dead,
+        error: entry.error,
+        anomaly: entry.anomaly,
+        observedAt: new Date(snapshot.updatedAt),
+      };
+      await tx.containerObservation.upsert({
+        where: { containerId: entry.id },
+        create: { containerId: entry.id, ...data },
+        update: data,
+      });
     }
-  } finally {
-    await unlink(temporary).catch(() => undefined);
-  }
+  });
 }
