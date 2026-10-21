@@ -62,11 +62,15 @@ export class WorkspaceLogStreamHub {
   private readonly maxEntries: number;
   private readonly maxBytes: number;
   private readonly replayEntries: number;
+  private readonly preserveStartupLogs: boolean;
 
   constructor(options: LogStreamOptions = {}) {
     this.maxEntries = options.maxEntries ?? WORKSPACE_LOG_BUFFER_ENTRIES;
     this.maxBytes = options.maxBytes ?? WORKSPACE_LOG_BUFFER_BYTES;
     this.replayEntries = options.replayEntries ?? WORKSPACE_LOG_REPLAY_ENTRIES;
+    this.preserveStartupLogs = options.maxEntries === undefined
+      && options.maxBytes === undefined
+      && options.replayEntries === undefined;
   }
 
   append(selector: LogSelector, value: WorkspaceLogEntry) {
@@ -78,7 +82,8 @@ export class WorkspaceLogStreamHub {
     const buffered = { id: buffer.nextId++, entry, bytes: serializedBytes(entry) };
     buffer.entries.push(buffered);
     buffer.bytes += buffered.bytes;
-    while (buffer.entries.length > this.maxEntries || buffer.bytes > this.maxBytes) {
+    const bounded = !(this.preserveStartupLogs && selector.channel === "startup");
+    while (bounded && (buffer.entries.length > this.maxEntries || buffer.bytes > this.maxBytes)) {
       const removed = buffer.entries.shift();
       if (!removed) break;
       buffer.bytes -= removed.bytes;
@@ -99,7 +104,9 @@ export class WorkspaceLogStreamHub {
       && (oldestId === undefined || (lastEventId >= oldestId - 1 && lastEventId <= latestId!));
     const replay = cursorAvailable
       ? buffer.entries.filter((entry) => entry.id > lastEventId)
-      : buffer.entries.slice(-this.replayEntries);
+      : (this.preserveStartupLogs && selector.channel === "startup"
+        ? buffer.entries
+        : buffer.entries.slice(-this.replayEntries));
 
     return {
       replay,

@@ -138,34 +138,3 @@ export async function writeWorkspaceServices(workspaceId: string, services: Work
   await writeFile(temporary, JSON.stringify(services, null, 2), "utf8");
   await rename(temporary, target);
 }
-
-function serviceCursorPath(workspaceId: string) {
-  return path.join(workspaceLogRoot(workspaceId), "service-cursors.json");
-}
-
-export async function readServiceLogCursors(workspaceId: string): Promise<Record<string, ServiceLogCursor>> {
-  try {
-    const value = JSON.parse(await readFile(serviceCursorPath(workspaceId), "utf8")) as unknown;
-    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    return Object.fromEntries(Object.entries(value).flatMap(([key, candidate]) => {
-      if (Number.isSafeInteger(candidate) && (candidate as number) >= 0) {
-        return [[key, { identity: "", lines: candidate as number }] as const];
-      }
-      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
-      const cursor = candidate as Partial<ServiceLogCursor>;
-      if (typeof cursor.identity !== "string" || !Number.isSafeInteger(cursor.lines) || cursor.lines! < 0) return [];
-      return [[key, { identity: cursor.identity, lines: cursor.lines! }] as const];
-    }));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw error;
-  }
-}
-
-export async function writeServiceLogCursors(workspaceId: string, cursors: Record<string, ServiceLogCursor>) {
-  const target = serviceCursorPath(workspaceId);
-  await mkdir(path.dirname(target), { recursive: true });
-  const temporary = `${target}.${process.pid}.tmp`;
-  await writeFile(temporary, JSON.stringify(cursors), "utf8");
-  await rename(temporary, target);
-}

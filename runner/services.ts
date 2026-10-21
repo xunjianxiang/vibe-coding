@@ -3,8 +3,6 @@ import path from "node:path";
 import {
   appendWorkspaceLog,
   isServiceId,
-  readServiceLogCursors,
-  writeServiceLogCursors,
   writeWorkspaceServices,
   type ServiceLogCursor,
   type WorkspaceService,
@@ -143,7 +141,7 @@ async function readLogLines(containerId: string, filePath: string, cursor: Servi
 async function getCursors(workspaceId: string) {
   const cached = cursorCache.get(workspaceId);
   if (cached) return cached;
-  const cursors = await readServiceLogCursors(workspaceId);
+  const cursors: Record<string, ServiceLogCursor> = {};
   cursorCache.set(workspaceId, cursors);
   return cursors;
 }
@@ -154,7 +152,6 @@ export async function resetProcessServiceCursors(workspaceId: string, serviceId:
     for (const key of Object.keys(cursors)) {
       if (key.startsWith(`${serviceId}:`)) delete cursors[key];
     }
-    await writeServiceLogCursors(workspaceId, cursors);
   });
 }
 
@@ -167,7 +164,6 @@ export async function registerProcessServices(workspaceId: string, workspacePath
 export async function syncProcessServiceLogs(workspaceId: string, containerId: string, services: WorkspaceService[]) {
   await serializeLogSync(workspaceId, async () => {
     const cursors = await getCursors(workspaceId);
-    let changed = false;
     for (const service of services.filter((candidate) => candidate.kind === "process")) {
       for (const source of service.logs) {
         const key = source.cursorKey
@@ -184,12 +180,8 @@ export async function syncProcessServiceLogs(workspaceId: string, containerId: s
             message,
           });
         }
-        if (cursors[key]?.identity !== result.cursor.identity || cursors[key]?.lines !== result.cursor.lines) {
-          cursors[key] = result.cursor;
-          changed = true;
-        }
+        cursors[key] = result.cursor;
       }
     }
-    if (changed) await writeServiceLogCursors(workspaceId, cursors);
   });
 }

@@ -129,7 +129,10 @@ function LogViewer({
   const queuedEntriesRef = useRef<LogEntry[]>([]);
 
   const appendEntries = (incoming: LogEntry[]) => {
-    setEntries((current) => [...current, ...incoming].slice(-500));
+    setEntries((current) => {
+      const next = [...current, ...incoming];
+      return channel === "startup" ? next : next.slice(-500);
+    });
   };
 
   useEffect(() => {
@@ -141,7 +144,9 @@ function LogViewer({
       try {
         const entry = JSON.parse(event.data) as LogEntry;
         if (pausedRef.current) {
-          queuedEntriesRef.current = [...queuedEntriesRef.current.slice(-499), entry];
+          queuedEntriesRef.current = channel === "startup"
+            ? [...queuedEntriesRef.current, entry]
+            : [...queuedEntriesRef.current.slice(-499), entry];
           setQueuedCount(queuedEntriesRef.current.length);
         } else {
           appendEntries([entry]);

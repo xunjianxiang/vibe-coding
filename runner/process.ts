@@ -19,6 +19,12 @@ export async function run(command: string, args: string[], cwd?: string, timeout
 
 export type ProcessOutputLine = { stream: "stdout" | "stderr"; message: string };
 
+/** Split ordinary lines and carriage-return progress updates into displayable frames. */
+export function splitProcessOutput(buffer: string, value: string) {
+  const parts = `${buffer}${value}`.split(/[\r\n]/);
+  return { messages: parts.slice(0, -1), buffer: parts.at(-1) ?? "" };
+}
+
 export function runStreaming(
   command: string,
   args: string[],
@@ -42,11 +48,11 @@ export function runStreaming(
       const value = chunk.toString("utf8");
       if (stream === "stdout") stdout = (stdout + value).slice(-16 * 1024 * 1024);
       else stderr = (stderr + value).slice(-16 * 1024 * 1024);
-      const lines = ((stream === "stdout" ? stdoutBuffer : stderrBuffer) + value).split(/\r?\n/);
-      const trailing = lines.pop() ?? "";
-      if (stream === "stdout") stdoutBuffer = trailing;
-      else stderrBuffer = trailing;
-      for (const message of lines) deliver(stream, message);
+      const previous = stream === "stdout" ? stdoutBuffer : stderrBuffer;
+      const result = splitProcessOutput(previous, value);
+      if (stream === "stdout") stdoutBuffer = result.buffer;
+      else stderrBuffer = result.buffer;
+      for (const message of result.messages) deliver(stream, message);
     };
 
     child.stdout.on("data", (chunk: Buffer) => consume("stdout", chunk));

@@ -65,6 +65,16 @@ test("evicts old entries when the byte limit is reached", () => {
   subscription.unsubscribe();
 });
 
+test("keeps every startup entry in the default hub", () => {
+  const hub = new WorkspaceLogStreamHub();
+  for (let index = 0; index < 600; index += 1) hub.append(selector, entry(String(index)));
+  const subscription = hub.subscribe(selector, undefined, () => undefined);
+  assert.equal(subscription.replay.length, 600);
+  assert.equal(subscription.replay[0]?.entry.message, "0");
+  assert.equal(subscription.replay.at(-1)?.entry.message, "599");
+  subscription.unsubscribe();
+});
+
 test("truncates oversized UTF-8 messages", () => {
   const normalized = normalizeWorkspaceLogEntry(entry("\u754c".repeat(WORKSPACE_LOG_MESSAGE_BYTES)));
   assert.ok(Buffer.byteLength(normalized.message, "utf8") <= WORKSPACE_LOG_MESSAGE_BYTES);
