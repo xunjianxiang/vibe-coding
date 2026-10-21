@@ -148,7 +148,7 @@ async function stopLegacyAgentDaemon(container: Docker.Container, terminalId: st
     User: "root",
     Env: [`AGENT_HOME=${LEGACY_CODEX_HOME_CONTAINER_PATH}/terminals/${terminalId}`],
     Cmd: [
-      "sh",
+      "bash",
       "-lc",
       "set -eu; signal_daemons() { signal=$1; for file in \"$AGENT_HOME\"/app-server-daemon/*.pid; do [ -f \"$file\" ] || continue; pid=$(sed -n 's/.*\"pid\":\\([0-9][0-9]*\\).*/\\1/p' \"$file\"); [ -n \"$pid\" ] || continue; [ -r \"/proc/$pid/environ\" ] || continue; if tr '\\0' '\\n' < \"/proc/$pid/environ\" | grep -Fqx \"CODEX_HOME=$AGENT_HOME\"; then kill -\"$signal\" \"$pid\" 2>/dev/null || true; fi; done; }; signal_daemons TERM; sleep 0.5; signal_daemons KILL",
     ],
@@ -209,7 +209,7 @@ async function discoverNativeSessionId(
     Tty: true,
     User: remoteUser,
     WorkingDir: workspaceFolder,
-    Cmd: ["sh", "-lc", getAgentSessionDiscoveryCommand(agent, agentHome, markerPath)],
+    Cmd: ["bash", "-lc", getAgentSessionDiscoveryCommand(agent, agentHome, markerPath)],
   });
   const chunks: Buffer[] = [];
   const stream = await discovery.start({ hijack: true, stdin: false, Tty: true }) as unknown as Duplex;
@@ -247,7 +247,7 @@ async function cleanupPersistedRuntimes(db: PrismaClient, docker: Docker) {
               User: remoteUser,
               WorkingDir: workspaceFolder,
               Env: [`VIBE_TERMINAL_PID_FILE=${runtimePidFile(persisted.workspaceId, persisted.terminalId)}`],
-              Cmd: ["sh", "-lc", `pid=$(cat "$VIBE_TERMINAL_PID_FILE" 2>/dev/null) && kill -${signal} -"$pid" 2>/dev/null`],
+              Cmd: ["bash", "-lc", `pid=$(cat "$VIBE_TERMINAL_PID_FILE" 2>/dev/null) && kill -${signal} -"$pid" 2>/dev/null`],
             });
             const signalStream = await signalExec.start({ hijack: true, stdin: false, Tty: false }) as unknown as Duplex;
             signalStream.resume();
@@ -275,7 +275,7 @@ async function signalRuntime(runtime: Runtime, signal: "TERM" | "KILL") {
     WorkingDir: runtime.workspaceFolder,
     Env: [`VIBE_TERMINAL_PID_FILE=${runtime.pidFile}`],
     Cmd: [
-      "sh",
+      "bash",
       "-lc",
       `pid=$(cat "$VIBE_TERMINAL_PID_FILE" 2>/dev/null) && kill -${signal} -"$pid" 2>/dev/null`,
     ],
@@ -481,7 +481,7 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
       ? getAgentLaunchSpec(agent, agentHome, storagePaths.codexSqliteHome, nativeSessionId)
       : null;
     const command = kind === "shell"
-      ? "exec \"${SHELL:-/bin/sh}\""
+      ? "exec /bin/bash"
       : agentLaunch!.command;
     const exec = await container.exec({
       AttachStdin: true,
@@ -498,7 +498,7 @@ export async function startTerminalGateway(db: PrismaClient, reconcileNow: () =>
         ...(agentSessionMarker ? [`VIBE_AGENT_SESSION_MARKER=${agentSessionMarker}`] : []),
         ...(agentLaunch?.env ?? []),
       ],
-      Cmd: ["sh", "-lc", `umask 077; printf "%s\\n" "$$" > "$VIBE_TERMINAL_PID_FILE"; ${agentSessionMarker ? "touch \"$VIBE_AGENT_SESSION_MARKER\"; " : ""}${command}`],
+      Cmd: ["bash", "-lc", `umask 077; printf "%s\\n" "$$" > "$VIBE_TERMINAL_PID_FILE"; ${agentSessionMarker ? "touch \"$VIBE_AGENT_SESSION_MARKER\"; " : ""}${command}`],
     });
     const activityAt = new Date();
     const persistedRuntime = await db.terminalRuntime.create({
